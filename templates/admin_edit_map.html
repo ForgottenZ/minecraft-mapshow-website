@@ -5,6 +5,14 @@
   <form method="post" class="tag-form">
     <input type="hidden" name="action" value="update" />
     <label>
+      地图名称
+      <input type="text" name="display_name" value="{{ display_name }}" placeholder="可留空使用文件夹名称" />
+    </label>
+    <label>
+      地图版本
+      <input type="text" name="version" value="{{ version }}" placeholder="可选" />
+    </label>
+    <label>
       地图简介
       <textarea name="description" rows="4" placeholder="填写地图简介">{{ description }}</textarea>
     </label>
@@ -12,11 +20,11 @@
       <button type="submit" class="button primary">保存标签与简介</button>
     </div>
     <div class="default-tags">
-      <span class="hint">默认标签快捷按钮：</span>
+      <span class="hint">通用标签快捷按钮：</span>
       {% for tag in default_tags %}
         <button type="button" class="button small" data-tag="{{ tag.id }}">{{ tag.name }}</button>
       {% else %}
-        <span class="hint">暂无默认标签</span>
+        <span class="hint">暂无通用标签</span>
       {% endfor %}
     </div>
     <div class="checkbox-grid">
@@ -39,8 +47,8 @@
       <input type="text" name="new_tag_name" />
     </label>
     <label class="checkbox">
-      <input type="checkbox" name="new_tag_default" />
-      设为默认标签
+      <input type="checkbox" name="new_tag_global" checked />
+      设为通用标签
     </label>
     <button type="submit" class="button">创建标签</button>
   </form>

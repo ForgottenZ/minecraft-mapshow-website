@@ -30,7 +30,7 @@
     <div class="map-grid">
       {% for item in maps %}
         <div class="card map-card">
-          <h3>{{ item.name }}</h3>
+          <h3>{{ item.display_name }}</h3>
           <div class="tag-list">
             {% for tag in item.tags %}
               <span class="tag">{{ tag.name }}</span>

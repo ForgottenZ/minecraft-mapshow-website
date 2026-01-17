@@ -39,6 +39,10 @@
         <option value="email" {% if registration_mode == "email" %}selected{% endif %}>邮箱验证</option>
       </select>
     </label>
+    <label class="checkbox">
+      <input type="checkbox" name="registration_default_enabled" {% if registration_default_enabled %}checked{% endif %} />
+      注册默认启用
+    </label>
     <p class="hint">
       邮箱验证需要在配置文件中填写 SMTP 信息后生效。
     </p>

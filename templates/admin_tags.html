@@ -5,7 +5,7 @@
   <form method="post" class="form-inline">
     <input type="text" name="name" placeholder="标签名称" required />
     <label class="checkbox">
-      <input type="checkbox" name="is_default" /> 默认标签
+      <input type="checkbox" name="is_global" checked /> 通用标签
     </label>
     <button type="submit" class="button primary">新增标签</button>
   </form>
@@ -13,7 +13,7 @@
     <thead>
       <tr>
         <th>名称</th>
-        <th>默认</th>
+        <th>通用</th>
         <th>创建时间</th>
         <th>操作</th>
       </tr>
@@ -22,11 +22,11 @@
       {% for tag in tags %}
         <tr>
           <td>{{ tag.name }}</td>
-          <td>{{ '是' if tag.is_default else '否' }}</td>
+          <td>{{ '是' if tag.is_global else '否' }}</td>
           <td>{{ tag.created_at }}</td>
           <td class="actions">
             <form method="post" action="{{ url_for('admin_toggle_tag', tag_id=tag.id) }}">
-              <button type="submit" class="button">{{ '取消默认' if tag.is_default else '设为默认' }}</button>
+              <button type="submit" class="button">{{ '取消通用' if tag.is_global else '设为通用' }}</button>
             </form>
             <form method="post" action="{{ url_for('admin_delete_tag', tag_id=tag.id) }}" onsubmit="return confirm('确认删除标签吗？');">
               <button type="submit" class="button danger">删除</button>

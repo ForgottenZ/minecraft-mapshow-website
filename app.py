@@ -112,7 +112,9 @@ def init_db():
             CREATE TABLE IF NOT EXISTS map_descriptions (
                 map_name TEXT PRIMARY KEY,
                 description TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                display_name TEXT,
+                version TEXT
             );
 
             CREATE TABLE IF NOT EXISTS settings (
@@ -126,9 +128,25 @@ def init_db():
         }
         if "email" not in columns:
             conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        if "email_verified" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0")
+        tag_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(tags)")
+        }
+        if "is_global" not in tag_columns:
+            conn.execute("ALTER TABLE tags ADD COLUMN is_global INTEGER NOT NULL DEFAULT 1")
+            conn.execute("UPDATE tags SET is_global=1 WHERE is_global IS NULL")
+        map_description_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(map_descriptions)")
+        }
+        if "display_name" not in map_description_columns:
+            conn.execute("ALTER TABLE map_descriptions ADD COLUMN display_name TEXT")
+        if "version" not in map_description_columns:
+            conn.execute("ALTER TABLE map_descriptions ADD COLUMN version TEXT")
         defaults = {
             "registration_enabled": "1",
             "registration_mode": "none",
+            "registration_default_enabled": "1",
         }
         for key, value in defaults.items():
             conn.execute(
@@ -366,20 +384,24 @@ def get_map_tags(map_name):
         ).fetchall()
 
 
-def get_map_description(map_name):
+def get_map_metadata(map_name):
     with get_db() as conn:
         row = conn.execute(
-            "SELECT description FROM map_descriptions WHERE map_name=?",
+            "SELECT description, display_name, version FROM map_descriptions WHERE map_name=?",
             (map_name,),
         ).fetchone()
     if not row:
-        return ""
-    return row["description"]
+        return {"description": "", "display_name": "", "version": ""}
+    return {
+        "description": row["description"],
+        "display_name": row["display_name"] or "",
+        "version": row["version"] or "",
+    }
 
 
-def get_default_tags():
+def get_global_tags():
     with get_db() as conn:
-        return conn.execute("SELECT * FROM tags WHERE is_default=1 ORDER BY name").fetchall()
+        return conn.execute("SELECT * FROM tags WHERE is_global=1 ORDER BY name").fetchall()
 
 
 @app.context_processor
@@ -434,8 +456,8 @@ def login():
             user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
         if not user or not check_password_hash(user["password_hash"], password):
             flash("用户名或密码错误。")
-        elif not user["enabled"]:
-            flash("该账号已被禁用。")
+        elif not user["enabled"] or (user["email"] and not user["email_verified"]):
+            flash("该账号已被禁用或邮箱未验证。")
         else:
             session.clear()
             session["user_id"] = user["id"]
@@ -469,6 +491,8 @@ def register():
         username = request.form.get("username", "").strip()
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "")
+        default_enabled = get_setting("registration_default_enabled", "1") == "1"
+        email_verified = 1 if registration_mode == "email" or not email else 0
         if registration_mode == "email":
             code = request.form.get("code", "").strip()
             code_info = session.get("email_code")
@@ -514,20 +538,29 @@ def register():
                 with get_db() as conn:
                     conn.execute(
                         """
-                        INSERT INTO users (username, password_hash, role, enabled, created_at, email)
-                        VALUES (?, ?, 'user', 1, ?, ?)
+                        INSERT INTO users (username, password_hash, role, enabled, created_at, email, email_verified)
+                        VALUES (?, ?, 'user', ?, ?, ?, ?)
                         """,
                         (
                             username,
                             generate_password_hash(password),
+                            1 if default_enabled else 0,
                             datetime.utcnow().isoformat(),
                             email if email else None,
+                            email_verified,
                         ),
                     )
+                with get_db() as conn:
+                    user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
                 session.pop("email_code", None)
                 session.pop("email_code_sent_at", None)
                 session.pop("email_code_address", None)
-                flash("注册成功，请登录。")
+                if user and user["enabled"] and (not user["email"] or user["email_verified"]):
+                    session.clear()
+                    session["user_id"] = user["id"]
+                    flash("注册成功，已为你自动登录。")
+                    return redirect(url_for("index"))
+                flash("注册成功，请等待管理员启用或完成邮箱验证后登录。")
                 return redirect(url_for("login"))
             except sqlite3.IntegrityError:
                 flash("用户名已存在。")
@@ -567,7 +600,15 @@ def index():
     map_items = []
     for item in maps:
         tags = get_map_tags(item["name"])
-        map_items.append({**item, "tags": tags})
+        metadata = get_map_metadata(item["name"])
+        map_items.append(
+            {
+                **item,
+                "tags": tags,
+                "display_name": metadata["display_name"] or item["name"],
+                "version": metadata["version"],
+            }
+        )
     query = request.args.get("q", "").strip()
     field = request.args.get("field", "all").strip().lower()
     if field not in {"all", "title", "tag", "content"}:
@@ -613,13 +654,15 @@ def map_detail(map_name):
         abort(404)
     item = maps[map_name]
     tags = get_map_tags(map_name)
-    description = get_map_description(map_name)
+    metadata = get_map_metadata(map_name)
     return render_template(
         "map_detail.html",
         user=user,
         map_item=item,
         tags=tags,
-        description=description,
+        description=metadata["description"],
+        display_name=metadata["display_name"] or item["name"],
+        version=metadata["version"],
     )
 
 
@@ -653,6 +696,7 @@ def admin_dashboard():
         ]
         tag_count = conn.execute("SELECT COUNT(*) AS count FROM tags").fetchone()["count"]
     registration_enabled, registration_mode = get_registration_config()
+    registration_default_enabled = get_setting("registration_default_enabled", "1") == "1"
     _, last_scan_at = get_cached_maps()
     return render_template(
         "admin_dashboard.html",
@@ -662,6 +706,7 @@ def admin_dashboard():
         tag_count=tag_count,
         registration_enabled=registration_enabled,
         registration_mode=registration_mode,
+        registration_default_enabled=registration_default_enabled,
         last_scan_at=last_scan_at,
     )
 
@@ -672,10 +717,12 @@ def admin_settings():
     require_admin(user)
     registration_enabled = "1" if request.form.get("registration_enabled") == "on" else "0"
     registration_mode = request.form.get("registration_mode", "none")
+    registration_default_enabled = "1" if request.form.get("registration_default_enabled") == "on" else "0"
     if registration_mode not in {"none", "email"}:
         registration_mode = "none"
     set_setting("registration_enabled", registration_enabled)
     set_setting("registration_mode", registration_mode)
+    set_setting("registration_default_enabled", registration_default_enabled)
     flash("注册设置已更新。")
     return redirect(url_for("admin_dashboard"))
 
@@ -799,15 +846,15 @@ def admin_tags():
     require_admin(user)
     if request.method == "POST":
         name = request.form.get("name", "").strip()
-        is_default = 1 if request.form.get("is_default") == "on" else 0
+        is_global = 1 if request.form.get("is_global") == "on" else 0
         if not name:
             flash("标签名不能为空。")
         else:
             try:
                 with get_db() as conn:
                     conn.execute(
-                        "INSERT INTO tags (name, is_default, created_at) VALUES (?, ?, ?)",
-                        (name, is_default, datetime.utcnow().isoformat()),
+                        "INSERT INTO tags (name, is_global, created_at) VALUES (?, ?, ?)",
+                        (name, is_global, datetime.utcnow().isoformat()),
                     )
                 flash("标签创建成功。")
             except sqlite3.IntegrityError:
@@ -823,15 +870,15 @@ def admin_tags_new():
     require_admin(user)
     if request.method == "POST":
         name = request.form.get("name", "").strip()
-        is_default = 1 if request.form.get("is_default") == "on" else 0
+        is_global = 1 if request.form.get("is_global") == "on" else 0
         if not name:
             flash("标签名不能为空。")
         else:
             try:
                 with get_db() as conn:
                     conn.execute(
-                        "INSERT INTO tags (name, is_default, created_at) VALUES (?, ?, ?)",
-                        (name, is_default, datetime.utcnow().isoformat()),
+                        "INSERT INTO tags (name, is_global, created_at) VALUES (?, ?, ?)",
+                        (name, is_global, datetime.utcnow().isoformat()),
                     )
                 flash("标签创建成功，可关闭窗口。")
             except sqlite3.IntegrityError:
@@ -847,8 +894,8 @@ def admin_toggle_tag(tag_id):
         tag = conn.execute("SELECT * FROM tags WHERE id=?", (tag_id,)).fetchone()
         if not tag:
             abort(404)
-        new_value = 0 if tag["is_default"] else 1
-        conn.execute("UPDATE tags SET is_default=? WHERE id=?", (new_value, tag_id))
+        new_value = 0 if tag["is_global"] else 1
+        conn.execute("UPDATE tags SET is_global=? WHERE id=?", (new_value, tag_id))
     return redirect(url_for("admin_tags"))
 
 
@@ -871,7 +918,15 @@ def admin_edit_map(map_name):
     if map_name not in maps:
         abort(404)
     with get_db() as conn:
-        tags = conn.execute("SELECT * FROM tags ORDER BY name").fetchall()
+        tags = conn.execute(
+            """
+            SELECT * FROM tags
+            WHERE is_global=1
+               OR id IN (SELECT tag_id FROM map_tags WHERE map_name=?)
+            ORDER BY name
+            """,
+            (map_name,),
+        ).fetchall()
         current_tags = conn.execute(
             "SELECT tag_id FROM map_tags WHERE map_name=?",
             (map_name,),
@@ -882,16 +937,26 @@ def admin_edit_map(map_name):
         action = request.form.get("action", "update")
         if action == "create_tag":
             name = request.form.get("new_tag_name", "").strip()
-            is_default = 1 if request.form.get("new_tag_default") == "on" else 0
+            is_global = 1 if request.form.get("new_tag_global") == "on" else 0
             if not name:
                 flash("标签名不能为空。")
             else:
                 try:
                     with get_db() as conn:
                         conn.execute(
-                            "INSERT INTO tags (name, is_default, created_at) VALUES (?, ?, ?)",
-                            (name, is_default, datetime.utcnow().isoformat()),
+                            "INSERT INTO tags (name, is_global, created_at) VALUES (?, ?, ?)",
+                            (name, is_global, datetime.utcnow().isoformat()),
                         )
+                        if not is_global:
+                            tag_row = conn.execute(
+                                "SELECT id FROM tags WHERE name=?",
+                                (name,),
+                            ).fetchone()
+                            if tag_row:
+                                conn.execute(
+                                    "INSERT INTO map_tags (map_name, tag_id) VALUES (?, ?)",
+                                    (map_name, tag_row["id"]),
+                                )
                     flash("标签创建成功。")
                 except sqlite3.IntegrityError:
                     flash("标签已存在。")
@@ -900,6 +965,8 @@ def admin_edit_map(map_name):
         selected = request.form.getlist("tags")
         selected_ids = {int(tag_id) for tag_id in selected}
         description = request.form.get("description", "").strip()
+        display_name = request.form.get("display_name", "").strip()
+        version = request.form.get("version", "").strip()
         with get_db() as conn:
             conn.execute("DELETE FROM map_tags WHERE map_name=?", (map_name,))
             for tag_id in selected_ids:
@@ -909,19 +976,21 @@ def admin_edit_map(map_name):
                 )
             conn.execute(
                 """
-                INSERT INTO map_descriptions (map_name, description, updated_at)
-                VALUES (?, ?, ?)
+                INSERT INTO map_descriptions (map_name, description, updated_at, display_name, version)
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(map_name) DO UPDATE SET
                     description=excluded.description,
-                    updated_at=excluded.updated_at
+                    updated_at=excluded.updated_at,
+                    display_name=excluded.display_name,
+                    version=excluded.version
                 """,
-                (map_name, description, datetime.utcnow().isoformat()),
+                (map_name, description, datetime.utcnow().isoformat(), display_name, version),
             )
         flash("标签与简介已更新。")
         return redirect(url_for("admin_edit_map", map_name=map_name))
 
-    default_tags = get_default_tags()
-    description = get_map_description(map_name)
+    default_tags = get_global_tags()
+    metadata = get_map_metadata(map_name)
     return render_template(
         "admin_edit_map.html",
         user=user,
@@ -929,7 +998,9 @@ def admin_edit_map(map_name):
         tags=tags,
         current_ids=current_ids,
         default_tags=default_tags,
-        description=description,
+        description=metadata["description"],
+        display_name=metadata["display_name"],
+        version=metadata["version"],
     )
 
 
