@@ -41,11 +41,7 @@ mcmap/
 > URL=https://example.com
 > ```
 
-如果你的地图目录挂载在其他路径，可设置环境变量：
-
-```bash
-export MCMAP_DIR=/mcmap
-```
+如果你的地图目录挂载在其他路径，请在配置文件中调整 `mcmap_dir`。
 
 ### 3. 启动服务
 
@@ -64,19 +60,30 @@ python app.py
   - 页面内含可拖动的 iframe 用于快速创建新标签。
 - **下载记录**：在“下载记录”页面查看所有用户的下载时间与地图名称。
 - **注册设置**：管理员可在仪表盘关闭注册或切换为邮箱验证注册。
+- **地图扫描**：系统每分钟自动扫描一次地图目录，管理员可在仪表盘手动触发。
+
+## 配置文件
+
+项目根目录的 `config.json` 维护地图目录、密钥与邮件配置。首次启动会自动生成默认配置。
+
+```json
+{
+  "secret_key": "dev-secret-key",
+  "mcmap_dir": "mcmap",
+  "smtp": {
+    "host": "smtp.example.com",
+    "port": 587,
+    "user": "your_account",
+    "password": "your_password",
+    "from": "your_account",
+    "use_tls": true
+  }
+}
+```
 
 ## 邮箱注册配置
 
-当管理员切换为“邮箱验证”注册方式时，需要配置以下环境变量：
-
-```bash
-export SMTP_HOST=smtp.example.com
-export SMTP_PORT=587
-export SMTP_USER=your_account
-export SMTP_PASSWORD=your_password
-export SMTP_FROM=your_account
-export SMTP_USE_TLS=1
-```
+当管理员切换为“邮箱验证”注册方式时，需要在 `config.json` 中配置 SMTP 信息。
 
 ## 数据与权限
 

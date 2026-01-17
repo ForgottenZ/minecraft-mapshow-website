@@ -1,0 +1,12 @@
+{
+  "secret_key": "dev-secret-key",
+  "mcmap_dir": "mcmap",
+  "smtp": {
+    "host": "",
+    "port": 587,
+    "user": "",
+    "password": "",
+    "from": "",
+    "use_tls": true
+  }
+}

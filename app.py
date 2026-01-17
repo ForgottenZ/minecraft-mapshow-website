@@ -1,7 +1,9 @@
-import os
+import json
 import random
 import smtplib
 import sqlite3
+import threading
+import time
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
@@ -21,14 +23,47 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "app.db"
-MCMAP_DIR = Path(os.environ.get("MCMAP_DIR", BASE_DIR / "mcmap"))
-if not MCMAP_DIR.exists():
-    fallback_dir = Path("/mcmap")
-    if fallback_dir.exists():
-        MCMAP_DIR = fallback_dir
+CONFIG_PATH = BASE_DIR / "config.json"
+
+
+def load_config():
+    default_config = {
+        "secret_key": "dev-secret-key",
+        "mcmap_dir": "mcmap",
+        "smtp": {
+            "host": "",
+            "port": 587,
+            "user": "",
+            "password": "",
+            "from": "",
+            "use_tls": True,
+        },
+    }
+    if not CONFIG_PATH.exists():
+        CONFIG_PATH.write_text(
+            json.dumps(default_config, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return default_config
+    with CONFIG_PATH.open("r", encoding="utf-8") as handle:
+        config = json.load(handle)
+    merged = {**default_config, **config}
+    merged["smtp"] = {**default_config["smtp"], **config.get("smtp", {})}
+    return merged
+
+
+CONFIG = load_config()
+MCMAP_DIR = Path(CONFIG.get("mcmap_dir", "mcmap"))
+if not MCMAP_DIR.is_absolute():
+    MCMAP_DIR = BASE_DIR / MCMAP_DIR
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key")
+app.secret_key = CONFIG.get("secret_key", "dev-secret-key")
+
+_maps_cache = []
+_maps_lock = threading.Lock()
+_last_scan_at = None
+_scan_thread_started = False
 
 
 def get_db():
@@ -121,12 +156,13 @@ def get_registration_config():
 
 
 def send_email_code(email_address, code):
-    smtp_host = os.environ.get("SMTP_HOST")
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_user = os.environ.get("SMTP_USER")
-    smtp_password = os.environ.get("SMTP_PASSWORD")
-    smtp_from = os.environ.get("SMTP_FROM", smtp_user)
-    use_tls = os.environ.get("SMTP_USE_TLS", "1") != "0"
+    smtp_config = CONFIG.get("smtp", {})
+    smtp_host = smtp_config.get("host")
+    smtp_port = int(smtp_config.get("port", 587))
+    smtp_user = smtp_config.get("user")
+    smtp_password = smtp_config.get("password")
+    smtp_from = smtp_config.get("from") or smtp_user
+    use_tls = bool(smtp_config.get("use_tls", True))
     if not smtp_host or not smtp_from:
         raise ValueError("SMTP 配置未完成")
     message = EmailMessage()
@@ -161,7 +197,7 @@ def require_admin(user):
         abort(403)
 
 
-def load_maps():
+def scan_maps():
     maps = []
     if not MCMAP_DIR.exists():
         return maps
@@ -191,6 +227,36 @@ def load_maps():
             }
         )
     return maps
+
+
+def refresh_map_cache():
+    global _maps_cache, _last_scan_at
+    maps = scan_maps()
+    with _maps_lock:
+        _maps_cache = maps
+        _last_scan_at = datetime.utcnow()
+
+
+def get_cached_maps():
+    with _maps_lock:
+        return list(_maps_cache), _last_scan_at
+
+
+def start_scan_thread():
+    global _scan_thread_started
+    if _scan_thread_started:
+        return
+
+    refresh_map_cache()
+
+    def loop():
+        while True:
+            refresh_map_cache()
+            time.sleep(60)
+
+    thread = threading.Thread(target=loop, daemon=True)
+    thread.start()
+    _scan_thread_started = True
 
 
 def filter_maps(map_items, query, field):
@@ -258,6 +324,7 @@ def inject_settings():
 @app.before_request
 def ensure_setup():
     init_db()
+    start_scan_thread()
     if request.endpoint in {"setup", "static"}:
         return
     if not has_admin() and request.endpoint not in {"setup", "login", "register"}:
@@ -425,7 +492,7 @@ def register_send_code():
 @app.route("/")
 def index():
     user = get_current_user()
-    maps = load_maps()
+    maps, _ = get_cached_maps()
     map_items = []
     for item in maps:
         tags = get_map_tags(item["name"])
@@ -469,7 +536,8 @@ def index():
 @app.route("/maps/<map_name>")
 def map_detail(map_name):
     user = get_current_user()
-    maps = {item["name"]: item for item in load_maps()}
+    maps, _ = get_cached_maps()
+    maps = {item["name"]: item for item in maps}
     if map_name not in maps:
         abort(404)
     item = maps[map_name]
@@ -488,7 +556,8 @@ def download(map_name):
     if not user or not user["enabled"]:
         flash("请先登录后下载。")
         return redirect(url_for("login"))
-    maps = {item["name"]: item for item in load_maps()}
+    maps, _ = get_cached_maps()
+    maps = {item["name"]: item for item in maps}
     if map_name not in maps:
         abort(404)
     zip_path = maps[map_name]["zip_path"]
@@ -511,6 +580,7 @@ def admin_dashboard():
         ]
         tag_count = conn.execute("SELECT COUNT(*) AS count FROM tags").fetchone()["count"]
     registration_enabled, registration_mode = get_registration_config()
+    _, last_scan_at = get_cached_maps()
     return render_template(
         "admin_dashboard.html",
         user=user,
@@ -519,6 +589,7 @@ def admin_dashboard():
         tag_count=tag_count,
         registration_enabled=registration_enabled,
         registration_mode=registration_mode,
+        last_scan_at=last_scan_at,
     )
 
 
@@ -533,6 +604,15 @@ def admin_settings():
     set_setting("registration_enabled", registration_enabled)
     set_setting("registration_mode", registration_mode)
     flash("注册设置已更新。")
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.route("/admin/maps/scan", methods=["POST"])
+def admin_scan_maps():
+    user = get_current_user()
+    require_admin(user)
+    refresh_map_cache()
+    flash("地图列表已重新扫描。")
     return redirect(url_for("admin_dashboard"))
 
 
@@ -681,7 +761,8 @@ def admin_delete_tag(tag_id):
 def admin_edit_map(map_name):
     user = get_current_user()
     require_admin(user)
-    maps = {item["name"]: item for item in load_maps()}
+    maps, _ = get_cached_maps()
+    maps = {item["name"]: item for item in maps}
     if map_name not in maps:
         abort(404)
     with get_db() as conn:

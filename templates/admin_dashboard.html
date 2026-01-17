@@ -37,9 +37,23 @@
       </select>
     </label>
     <p class="hint">
-      邮箱验证需要配置环境变量 SMTP_HOST、SMTP_PORT、SMTP_USER、SMTP_PASSWORD、SMTP_FROM（可选）与 SMTP_USE_TLS。
+      邮箱验证需要在配置文件中填写 SMTP 信息后生效。
     </p>
     <button type="submit" class="primary">保存设置</button>
+  </form>
+</section>
+<section class="card">
+  <h3>地图扫描</h3>
+  <p class="hint">
+    系统每分钟自动扫描一次地图目录。
+    {% if last_scan_at %}
+      最近扫描时间：{{ last_scan_at }} (UTC)
+    {% else %}
+      尚未扫描。
+    {% endif %}
+  </p>
+  <form method="post" action="{{ url_for('admin_scan_maps') }}">
+    <button type="submit" class="primary">立即扫描</button>
   </form>
 </section>
 {% endblock %}
