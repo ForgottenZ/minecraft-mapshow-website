@@ -22,4 +22,24 @@
     <a class="button" href="{{ url_for('admin_downloads') }}">下载记录</a>
   </div>
 </section>
+<section class="card">
+  <h3>注册设置</h3>
+  <form method="post" action="{{ url_for('admin_settings') }}" class="form-grid">
+    <label class="checkbox">
+      <input type="checkbox" name="registration_enabled" {% if registration_enabled %}checked{% endif %} />
+      允许注册
+    </label>
+    <label>
+      注册方式
+      <select name="registration_mode">
+        <option value="none" {% if registration_mode == "none" %}selected{% endif %}>无需邮箱</option>
+        <option value="email" {% if registration_mode == "email" %}selected{% endif %}>邮箱验证</option>
+      </select>
+    </label>
+    <p class="hint">
+      邮箱验证需要配置环境变量 SMTP_HOST、SMTP_PORT、SMTP_USER、SMTP_PASSWORD、SMTP_FROM（可选）与 SMTP_USE_TLS。
+    </p>
+    <button type="submit" class="primary">保存设置</button>
+  </form>
+</section>
 {% endblock %}

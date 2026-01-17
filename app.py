@@ -1,6 +1,9 @@
 import os
+import random
+import smtplib
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
+from email.message import EmailMessage
 from pathlib import Path
 
 from flask import (
@@ -18,7 +21,11 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "app.db"
-MCMAP_DIR = BASE_DIR / "mcmap"
+MCMAP_DIR = Path(os.environ.get("MCMAP_DIR", BASE_DIR / "mcmap"))
+if not MCMAP_DIR.exists():
+    fallback_dir = Path("/mcmap")
+    if fallback_dir.exists():
+        MCMAP_DIR = fallback_dir
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key")
@@ -65,8 +72,74 @@ def init_db():
                 PRIMARY KEY (map_name, tag_id),
                 FOREIGN KEY(tag_id) REFERENCES tags(id)
             );
+
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             """
         )
+        columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(users)")
+        }
+        if "email" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        defaults = {
+            "registration_enabled": "1",
+            "registration_mode": "none",
+        }
+        for key, value in defaults.items():
+            conn.execute(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+                (key, value),
+            )
+
+
+def get_setting(key, default=None):
+    with get_db() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    if not row:
+        return default
+    return row["value"]
+
+
+def set_setting(key, value):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
+
+
+def get_registration_config():
+    enabled = get_setting("registration_enabled", "1") == "1"
+    mode = get_setting("registration_mode", "none")
+    if mode not in {"none", "email"}:
+        mode = "none"
+    return enabled, mode
+
+
+def send_email_code(email_address, code):
+    smtp_host = os.environ.get("SMTP_HOST")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER")
+    smtp_password = os.environ.get("SMTP_PASSWORD")
+    smtp_from = os.environ.get("SMTP_FROM", smtp_user)
+    use_tls = os.environ.get("SMTP_USE_TLS", "1") != "0"
+    if not smtp_host or not smtp_from:
+        raise ValueError("SMTP 配置未完成")
+    message = EmailMessage()
+    message["Subject"] = "Minecraft 地图站注册验证码"
+    message["From"] = smtp_from
+    message["To"] = email_address
+    message.set_content(f"你的验证码是：{code}，10 分钟内有效。")
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+        if use_tls:
+            server.starttls()
+        if smtp_user and smtp_password:
+            server.login(smtp_user, smtp_password)
+        server.send_message(message)
 
 
 def has_admin():
@@ -120,6 +193,29 @@ def load_maps():
     return maps
 
 
+def filter_maps(map_items, query, field):
+    if not query:
+        return map_items
+    query_lower = query.lower()
+    filtered = []
+    for item in map_items:
+        name = item["name"].lower()
+        tag_names = [tag["name"].lower() for tag in item.get("tags", [])]
+        detail_url = (item.get("detail_url") or "").lower()
+        matches_title = query_lower in name
+        matches_tag = any(query_lower in tag for tag in tag_names)
+        matches_content = query_lower in detail_url
+        if field == "title" and matches_title:
+            filtered.append(item)
+        elif field == "tag" and matches_tag:
+            filtered.append(item)
+        elif field == "content" and matches_content:
+            filtered.append(item)
+        elif field == "all" and (matches_title or matches_tag or matches_content):
+            filtered.append(item)
+    return filtered
+
+
 def extract_url(url_path: Path):
     try:
         content = url_path.read_text(encoding="utf-8", errors="ignore")
@@ -148,6 +244,15 @@ def get_map_tags(map_name):
 def get_default_tags():
     with get_db() as conn:
         return conn.execute("SELECT * FROM tags WHERE is_default=1 ORDER BY name").fetchall()
+
+
+@app.context_processor
+def inject_settings():
+    registration_enabled, registration_mode = get_registration_config()
+    return {
+        "registration_enabled": registration_enabled,
+        "registration_mode": registration_mode,
+    }
 
 
 @app.before_request
@@ -213,26 +318,108 @@ def logout():
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
+    registration_enabled, registration_mode = get_registration_config()
+    if not registration_enabled:
+        if request.method == "POST":
+            flash("管理员已关闭注册。")
+        return render_template(
+            "register.html",
+            registration_enabled=registration_enabled,
+            registration_mode=registration_mode,
+        )
     if request.method == "POST":
         username = request.form.get("username", "").strip()
+        email = request.form.get("email", "").strip()
         password = request.form.get("password", "")
-        if not username or not password:
+        if registration_mode == "email":
+            code = request.form.get("code", "").strip()
+            code_info = session.get("email_code")
+            code_sent_at = session.get("email_code_sent_at")
+            code_email = session.get("email_code_address")
+            if not email or not code or not password:
+                flash("请填写邮箱、验证码和密码。")
+                return render_template(
+                    "register.html",
+                    registration_enabled=registration_enabled,
+                    registration_mode=registration_mode,
+                    email=email,
+                )
+            if not code_info or not code_sent_at or code_email != email:
+                flash("请先获取邮箱验证码。")
+                return render_template(
+                    "register.html",
+                    registration_enabled=registration_enabled,
+                    registration_mode=registration_mode,
+                    email=email,
+                )
+            if datetime.utcnow() - datetime.fromisoformat(code_sent_at) > timedelta(minutes=10):
+                flash("验证码已过期，请重新获取。")
+                return render_template(
+                    "register.html",
+                    registration_enabled=registration_enabled,
+                    registration_mode=registration_mode,
+                    email=email,
+                )
+            if code != code_info:
+                flash("验证码错误。")
+                return render_template(
+                    "register.html",
+                    registration_enabled=registration_enabled,
+                    registration_mode=registration_mode,
+                    email=email,
+                )
+            username = email
+        if registration_mode == "none" and (not username or not password):
             flash("请填写用户名和密码。")
         else:
             try:
                 with get_db() as conn:
                     conn.execute(
                         """
-                        INSERT INTO users (username, password_hash, role, enabled, created_at)
-                        VALUES (?, ?, 'user', 1, ?)
+                        INSERT INTO users (username, password_hash, role, enabled, created_at, email)
+                        VALUES (?, ?, 'user', 1, ?, ?)
                         """,
-                        (username, generate_password_hash(password), datetime.utcnow().isoformat()),
+                        (
+                            username,
+                            generate_password_hash(password),
+                            datetime.utcnow().isoformat(),
+                            email if email else None,
+                        ),
                     )
+                session.pop("email_code", None)
+                session.pop("email_code_sent_at", None)
+                session.pop("email_code_address", None)
                 flash("注册成功，请登录。")
                 return redirect(url_for("login"))
             except sqlite3.IntegrityError:
                 flash("用户名已存在。")
-    return render_template("register.html")
+    return render_template(
+        "register.html",
+        registration_enabled=registration_enabled,
+        registration_mode=registration_mode,
+    )
+
+
+@app.route("/register/send-code", methods=["POST"])
+def register_send_code():
+    registration_enabled, registration_mode = get_registration_config()
+    if not registration_enabled or registration_mode != "email":
+        abort(403)
+    email = request.form.get("email", "").strip()
+    if not email:
+        flash("请输入邮箱地址。")
+        return redirect(url_for("register"))
+    code = f"{random.randint(0, 999999):06d}"
+    try:
+        send_email_code(email, code)
+    except Exception as exc:
+        flash(f"验证码发送失败：{exc}")
+        return redirect(url_for("register"))
+    session["email_code"] = code
+    session["email_code_sent_at"] = datetime.utcnow().isoformat()
+    session["email_code_address"] = email
+    flash("验证码已发送，请查收邮箱。")
+    return redirect(url_for("register"))
 
 
 @app.route("/")
@@ -241,16 +428,41 @@ def index():
     maps = load_maps()
     map_items = []
     for item in maps:
-        map_items.append(
-            {
-                **item,
-                "tags": get_map_tags(item["name"]),
-            }
-        )
+        tags = get_map_tags(item["name"])
+        map_items.append({**item, "tags": tags})
+    query = request.args.get("q", "").strip()
+    field = request.args.get("field", "all").strip().lower()
+    if field not in {"all", "title", "tag", "content"}:
+        field = "all"
+    per_page = request.args.get("per_page", "10")
+    try:
+        per_page_value = int(per_page)
+    except ValueError:
+        per_page_value = 10
+    if per_page_value not in {10, 20, 50}:
+        per_page_value = 10
+    filtered_items = filter_maps(map_items, query, field)
+    total_items = len(filtered_items)
+    total_pages = max(1, (total_items + per_page_value - 1) // per_page_value)
+    try:
+        page = int(request.args.get("page", "1"))
+    except ValueError:
+        page = 1
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * per_page_value
+    end = start + per_page_value
+    page_items = filtered_items[start:end]
     return render_template(
         "maps.html",
         user=user,
-        maps=map_items,
+        maps=page_items,
+        query=query,
+        field=field,
+        page=page,
+        per_page=per_page_value,
+        total_pages=total_pages,
+        total_items=total_items,
+        pages=list(range(1, total_pages + 1)),
     )
 
 
@@ -298,13 +510,30 @@ def admin_dashboard():
             "count"
         ]
         tag_count = conn.execute("SELECT COUNT(*) AS count FROM tags").fetchone()["count"]
+    registration_enabled, registration_mode = get_registration_config()
     return render_template(
         "admin_dashboard.html",
         user=user,
         user_count=user_count,
         download_count=download_count,
         tag_count=tag_count,
+        registration_enabled=registration_enabled,
+        registration_mode=registration_mode,
     )
+
+
+@app.route("/admin/settings", methods=["POST"])
+def admin_settings():
+    user = get_current_user()
+    require_admin(user)
+    registration_enabled = "1" if request.form.get("registration_enabled") == "on" else "0"
+    registration_mode = request.form.get("registration_mode", "none")
+    if registration_mode not in {"none", "email"}:
+        registration_mode = "none"
+    set_setting("registration_enabled", registration_enabled)
+    set_setting("registration_mode", registration_mode)
+    flash("注册设置已更新。")
+    return redirect(url_for("admin_dashboard"))
 
 
 @app.route("/admin/users")

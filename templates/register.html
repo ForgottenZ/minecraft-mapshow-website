@@ -2,16 +2,46 @@
 {% block content %}
 <section class="card narrow">
   <h2>注册</h2>
-  <form method="post" class="form-grid">
-    <label>
-      用户名
-      <input type="text" name="username" required />
-    </label>
-    <label>
-      密码
-      <input type="password" name="password" required />
-    </label>
-    <button type="submit" class="primary">注册</button>
-  </form>
+  {% if not registration_enabled %}
+    <p class="hint">管理员已关闭注册，如需账号请联系管理员。</p>
+  {% else %}
+    {% if registration_mode == "email" %}
+      <form method="post" action="{{ url_for('register_send_code') }}" class="form-inline">
+        <label>
+          邮箱
+          <input type="text" name="email" value="{{ email or '' }}" required />
+        </label>
+        <button type="submit">发送验证码</button>
+      </form>
+      <form method="post" class="form-grid">
+        <label>
+          邮箱
+          <input type="text" name="email" value="{{ email or '' }}" required />
+        </label>
+        <label>
+          验证码
+          <input type="text" name="code" required />
+        </label>
+        <label>
+          密码
+          <input type="password" name="password" required />
+        </label>
+        <button type="submit" class="primary">注册</button>
+        <p class="hint">邮箱验证码有效期为 10 分钟。</p>
+      </form>
+    {% else %}
+      <form method="post" class="form-grid">
+        <label>
+          用户名
+          <input type="text" name="username" required />
+        </label>
+        <label>
+          密码
+          <input type="password" name="password" required />
+        </label>
+        <button type="submit" class="primary">注册</button>
+      </form>
+    {% endif %}
+  {% endif %}
 </section>
 {% endblock %}

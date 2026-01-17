@@ -23,7 +23,9 @@
           <a href="{{ url_for('logout') }}">退出</a>
         {% else %}
           <a href="{{ url_for('login') }}">登录</a>
-          <a href="{{ url_for('register') }}">注册</a>
+          {% if registration_enabled %}
+            <a href="{{ url_for('register') }}">注册</a>
+          {% endif %}
         {% endif %}
       </nav>
     </div>

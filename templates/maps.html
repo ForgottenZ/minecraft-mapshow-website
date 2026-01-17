@@ -2,6 +2,30 @@
 {% block content %}
 <section>
   <h2>地图列表</h2>
+  <form method="get" class="search-bar card">
+    <label>
+      搜索
+      <input type="text" name="q" value="{{ query }}" placeholder="输入关键字" />
+    </label>
+    <label>
+      搜索范围
+      <select name="field">
+        <option value="all" {% if field == "all" %}selected{% endif %}>全部</option>
+        <option value="title" {% if field == "title" %}selected{% endif %}>标题</option>
+        <option value="tag" {% if field == "tag" %}selected{% endif %}>标签</option>
+        <option value="content" {% if field == "content" %}selected{% endif %}>内容</option>
+      </select>
+    </label>
+    <label>
+      每页数量
+      <select name="per_page">
+        <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
+        <option value="20" {% if per_page == 20 %}selected{% endif %}>20</option>
+        <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+      </select>
+    </label>
+    <button type="submit" class="primary">查询</button>
+  </form>
   {% if maps %}
     <div class="map-grid">
       {% for item in maps %}
@@ -25,9 +49,30 @@
         </div>
       {% endfor %}
     </div>
+    {% if total_pages > 1 %}
+      <div class="pagination">
+        {% if page > 1 %}
+          <a class="button" href="{{ url_for('index', q=query, field=field, per_page=per_page, page=page-1) }}">上一页</a>
+        {% endif %}
+        {% for p in pages %}
+          {% if p == page %}
+            <span class="button primary">{{ p }}</span>
+          {% else %}
+            <a class="button" href="{{ url_for('index', q=query, field=field, per_page=per_page, page=p) }}">{{ p }}</a>
+          {% endif %}
+        {% endfor %}
+        {% if page < total_pages %}
+          <a class="button" href="{{ url_for('index', q=query, field=field, per_page=per_page, page=page+1) }}">下一页</a>
+        {% endif %}
+      </div>
+    {% endif %}
   {% else %}
     <div class="card">
-      <p>未检测到可用地图。请在运行目录创建 <code>mcmap</code> 文件夹，并放入地图文件夹与同名压缩包。</p>
+      {% if query %}
+        <p>没有匹配的地图，请尝试调整关键字或搜索范围。</p>
+      {% else %}
+        <p>未检测到可用地图。请在运行目录创建 <code>mcmap</code> 文件夹，并放入地图文件夹与同名压缩包。</p>
+      {% endif %}
     </div>
   {% endif %}
 </section>

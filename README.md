@@ -41,6 +41,12 @@ mcmap/
 > URL=https://example.com
 > ```
 
+如果你的地图目录挂载在其他路径，可设置环境变量：
+
+```bash
+export MCMAP_DIR=/mcmap
+```
+
 ### 3. 启动服务
 
 ```bash
@@ -57,6 +63,20 @@ python app.py
   - 默认标签会以快捷按钮形式展示；
   - 页面内含可拖动的 iframe 用于快速创建新标签。
 - **下载记录**：在“下载记录”页面查看所有用户的下载时间与地图名称。
+- **注册设置**：管理员可在仪表盘关闭注册或切换为邮箱验证注册。
+
+## 邮箱注册配置
+
+当管理员切换为“邮箱验证”注册方式时，需要配置以下环境变量：
+
+```bash
+export SMTP_HOST=smtp.example.com
+export SMTP_PORT=587
+export SMTP_USER=your_account
+export SMTP_PASSWORD=your_password
+export SMTP_FROM=your_account
+export SMTP_USE_TLS=1
+```
 
 ## 数据与权限
 

@@ -90,6 +90,17 @@ nav a:hover {
   gap: 16px;
 }
 
+.search-bar {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  align-items: end;
+}
+
+.search-bar button {
+  width: fit-content;
+}
+
 .form-inline {
   display: flex;
   flex-wrap: wrap;
@@ -179,6 +190,14 @@ button.primary,
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 20px;
 }
 
 .tag-list {
