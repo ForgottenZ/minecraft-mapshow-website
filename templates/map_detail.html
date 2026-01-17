@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <div class="detail-header">
+    <div>
+      <h2>{{ map_item.name }}</h2>
+      <div class="tag-list">
+        {% for tag in tags %}
+          <span class="tag">{{ tag.name }}</span>
+        {% else %}
+          <span class="tag muted">暂无标签</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="map-actions">
+      {% if map_item.detail_url %}
+        <a class="button" href="{{ map_item.detail_url }}" target="_blank" rel="noopener">详细说明</a>
+      {% endif %}
+      {% if user %}
+        <a class="button primary" href="{{ url_for('download', map_name=map_item.name) }}">下载</a>
+      {% else %}
+        <span class="button disabled" title="登录后可下载">登录后下载</span>
+      {% endif %}
+      {% if user and user['role'] == 'admin' %}
+        <a class="button" href="{{ url_for('admin_edit_map', map_name=map_item.name) }}">管理标签</a>
+      {% endif %}
+    </div>
+  </div>
+  <p>地图文件位于 <code>mcmap/{{ map_item.name }}</code>。</p>
+</section>
+{% endblock %}

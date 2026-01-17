@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>首次启动：创建管理员</h2>
+  <p>系统检测到当前没有管理员账户，请先创建管理员账号。</p>
+  <form method="post" class="form-grid">
+    <label>
+      管理员用户名
+      <input type="text" name="username" required />
+    </label>
+    <label>
+      管理员密码
+      <input type="password" name="password" required />
+    </label>
+    <button type="submit" class="primary">创建管理员</button>
+  </form>
+</section>
+{% endblock %}

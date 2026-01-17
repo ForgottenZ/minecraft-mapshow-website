@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title if title else "Minecraft 地图展示" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-content">
+      <div>
+        <h1>Minecraft 地图展示</h1>
+        <p class="subtitle">游客可浏览，登录后下载，管理员可管理标签与用户。</p>
+      </div>
+      <nav>
+        <a href="{{ url_for('index') }}">地图列表</a>
+        {% if user and user['role'] == 'admin' %}
+          <a href="{{ url_for('admin_dashboard') }}">管理员</a>
+        {% endif %}
+        {% if user %}
+          <span class="nav-user">你好，{{ user['username'] }}</span>
+          <a href="{{ url_for('logout') }}">退出</a>
+        {% else %}
+          <a href="{{ url_for('login') }}">登录</a>
+          <a href="{{ url_for('register') }}">注册</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+  <main class="container">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flash">
+          {% for message in messages %}
+            <div class="flash-item">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
