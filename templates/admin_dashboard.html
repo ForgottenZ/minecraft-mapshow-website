@@ -50,6 +50,27 @@
   </form>
 </section>
 <section class="card">
+  <h3>站点显示</h3>
+  <form method="post" action="{{ url_for('admin_site_settings') }}" class="form-grid">
+    <label>
+      标题
+      <input type="text" name="site_title" value="{{ site_title }}" />
+    </label>
+    <label>
+      副标题
+      <input type="text" name="site_subtitle" value="{{ site_subtitle }}" />
+    </label>
+    <label>
+      网站图标路径
+      <input type="text" name="site_icon_path" value="{{ site_icon_path }}" placeholder="/absolute/path/favicon.png" />
+    </label>
+    <p class="hint">
+      网站图标需填写服务器上的绝对路径，留空则不显示图标。
+    </p>
+    <button type="submit" class="primary">保存显示设置</button>
+  </form>
+</section>
+<section class="card">
   <h3>地图扫描</h3>
   <p class="hint">
     系统每分钟自动扫描一次地图目录。

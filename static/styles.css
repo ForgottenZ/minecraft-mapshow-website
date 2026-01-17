@@ -195,12 +195,25 @@ button.primary,
 
 .map-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
 }
 
+.map-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.map-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
 .map-card h3 {
-  margin-top: 0;
+  margin: 0;
 }
 
 .map-actions {
@@ -218,10 +231,41 @@ button.primary,
   margin-top: 20px;
 }
 
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #2f44c9;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.map-summary {
+  margin: 0;
+  color: #2c2c2c;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.map-summary.muted {
+  color: var(--muted);
+}
+
+.map-tags {
+  margin-top: -4px;
+}
+
 .tag-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.muted {
+  color: var(--muted);
 }
 
 .tag {

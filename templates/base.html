@@ -3,15 +3,20 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{{ title if title else "Minecraft 地图展示" }}</title>
+  <title>{{ title if title else site_title }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  {% if site_icon_path %}
+    <link rel="icon" href="{{ url_for('site_icon') }}" />
+  {% endif %}
 </head>
 <body>
   <header class="site-header">
     <div class="container header-content">
       <div>
-        <h1>Minecraft 地图展示</h1>
-        <p class="subtitle">游客可浏览，登录后下载，管理员可管理标签与用户。</p>
+        <h1>{{ site_title }}</h1>
+        {% if site_subtitle %}
+          <p class="subtitle">{{ site_subtitle }}</p>
+        {% endif %}
       </div>
       <nav>
         <a href="{{ url_for('index') }}">地图列表</a>

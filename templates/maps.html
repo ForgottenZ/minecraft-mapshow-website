@@ -30,10 +30,20 @@
     <div class="map-grid">
       {% for item in maps %}
         <div class="card map-card">
-          <h3>{{ item.display_name }}</h3>
-          <div class="tag-list">
+          <div class="map-card-header">
+            <h3>{{ item.display_name }}</h3>
+            {% if item.version %}
+              <span class="badge version-badge">🎮 {{ item.version }}</span>
+            {% endif %}
+          </div>
+          {% if item.description %}
+            <p class="map-summary">{{ item.description }}</p>
+          {% else %}
+            <p class="map-summary muted">暂无地图简介。</p>
+          {% endif %}
+          <div class="tag-list map-tags">
             {% for tag in item.tags %}
-              <span class="tag">{{ tag.name }}</span>
+              <span class="tag">🏷️ {{ tag.name }}</span>
             {% else %}
               <span class="tag muted">暂无标签</span>
             {% endfor %}

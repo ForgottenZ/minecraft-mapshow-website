@@ -147,6 +147,9 @@ def init_db():
             "registration_enabled": "1",
             "registration_mode": "none",
             "registration_default_enabled": "1",
+            "site_title": "Minecraft 地图展示",
+            "site_subtitle": "游客可浏览，登录后下载，管理员可管理标签与用户。",
+            "site_icon_path": "",
         }
         for key, value in defaults.items():
             conn.execute(
@@ -343,11 +346,13 @@ def filter_maps(map_items, query, field):
     filtered = []
     for item in map_items:
         name = item["name"].lower()
+        display_name = (item.get("display_name") or item["name"]).lower()
         tag_names = [tag["name"].lower() for tag in item.get("tags", [])]
         detail_url = (item.get("detail_url") or "").lower()
-        matches_title = query_lower in name
+        description = (item.get("description") or "").lower()
+        matches_title = query_lower in name or query_lower in display_name
         matches_tag = any(query_lower in tag for tag in tag_names)
-        matches_content = query_lower in detail_url
+        matches_content = query_lower in detail_url or query_lower in description
         if field == "title" and matches_title:
             filtered.append(item)
         elif field == "tag" and matches_tag:
@@ -407,10 +412,16 @@ def get_global_tags():
 @app.context_processor
 def inject_settings():
     registration_enabled, registration_mode = get_registration_config()
+    site_title = get_setting("site_title", "Minecraft 地图展示")
+    site_subtitle = get_setting("site_subtitle", "游客可浏览，登录后下载，管理员可管理标签与用户。")
+    site_icon_path = get_setting("site_icon_path", "").strip()
     return {
         "registration_enabled": registration_enabled,
         "registration_mode": registration_mode,
         "debug_enabled": bool(CONFIG.get("debug", False)),
+        "site_title": site_title or "Minecraft 地图展示",
+        "site_subtitle": site_subtitle,
+        "site_icon_path": site_icon_path,
     }
 
 
@@ -607,6 +618,7 @@ def index():
                 "tags": tags,
                 "display_name": metadata["display_name"] or item["name"],
                 "version": metadata["version"],
+                "description": metadata["description"],
             }
         )
     query = request.args.get("q", "").strip()
@@ -643,6 +655,17 @@ def index():
         total_items=total_items,
         pages=list(range(1, total_pages + 1)),
     )
+
+
+@app.route("/site-icon")
+def site_icon():
+    icon_path_value = get_setting("site_icon_path", "").strip()
+    if not icon_path_value:
+        abort(404)
+    icon_path = Path(icon_path_value)
+    if not icon_path.is_absolute() or not icon_path.is_file():
+        abort(404)
+    return send_file(icon_path)
 
 
 @app.route("/maps/<map_name>")
@@ -697,6 +720,9 @@ def admin_dashboard():
         tag_count = conn.execute("SELECT COUNT(*) AS count FROM tags").fetchone()["count"]
     registration_enabled, registration_mode = get_registration_config()
     registration_default_enabled = get_setting("registration_default_enabled", "1") == "1"
+    site_title = get_setting("site_title", "Minecraft 地图展示")
+    site_subtitle = get_setting("site_subtitle", "游客可浏览，登录后下载，管理员可管理标签与用户。")
+    site_icon_path = get_setting("site_icon_path", "")
     _, last_scan_at = get_cached_maps()
     return render_template(
         "admin_dashboard.html",
@@ -708,6 +734,9 @@ def admin_dashboard():
         registration_mode=registration_mode,
         registration_default_enabled=registration_default_enabled,
         last_scan_at=last_scan_at,
+        site_title=site_title,
+        site_subtitle=site_subtitle,
+        site_icon_path=site_icon_path,
     )
 
 
@@ -724,6 +753,23 @@ def admin_settings():
     set_setting("registration_mode", registration_mode)
     set_setting("registration_default_enabled", registration_default_enabled)
     flash("注册设置已更新。")
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.route("/admin/site-settings", methods=["POST"])
+def admin_site_settings():
+    user = get_current_user()
+    require_admin(user)
+    site_title = request.form.get("site_title", "").strip()
+    site_subtitle = request.form.get("site_subtitle", "").strip()
+    site_icon_path = request.form.get("site_icon_path", "").strip()
+    if site_icon_path and not Path(site_icon_path).is_absolute():
+        flash("网站图标路径需要填写绝对路径。")
+        return redirect(url_for("admin_dashboard"))
+    set_setting("site_title", site_title or "Minecraft 地图展示")
+    set_setting("site_subtitle", site_subtitle)
+    set_setting("site_icon_path", site_icon_path)
+    flash("站点显示设置已更新。")
     return redirect(url_for("admin_dashboard"))
 
 
