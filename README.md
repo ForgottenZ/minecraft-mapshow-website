@@ -41,7 +41,7 @@ mcmap/
 > URL=https://example.com
 > ```
 
-如果你的地图目录挂载在其他路径，请在配置文件中调整 `mcmap_dir`。
+如果你的地图目录挂载在其他路径，请在配置文件中调整 `mcmap_dir`（建议使用 Linux 绝对路径）。
 
 ### 3. 启动服务
 
@@ -69,7 +69,8 @@ python app.py
 ```json
 {
   "secret_key": "dev-secret-key",
-  "mcmap_dir": "mcmap",
+  "debug": false,
+  "mcmap_dir": "/mcmap",
   "smtp": {
     "host": "smtp.example.com",
     "port": 587,
@@ -84,6 +85,10 @@ python app.py
 ## 邮箱注册配置
 
 当管理员切换为“邮箱验证”注册方式时，需要在 `config.json` 中配置 SMTP 信息。
+
+## 调试工具
+
+当 `config.json` 的 `debug` 设为 `true` 时，管理员仪表盘会显示“调试工具”入口，用于查看程序当前能访问到的配置、缓存与目录信息。
 
 ## 数据与权限
 

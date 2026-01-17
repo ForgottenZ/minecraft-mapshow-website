@@ -20,6 +20,9 @@
     <a class="button" href="{{ url_for('admin_users') }}">用户管理</a>
     <a class="button" href="{{ url_for('admin_tags') }}">标签管理</a>
     <a class="button" href="{{ url_for('admin_downloads') }}">下载记录</a>
+    {% if debug_enabled %}
+      <a class="button" href="{{ url_for('admin_debug') }}">调试工具</a>
+    {% endif %}
   </div>
 </section>
 <section class="card">

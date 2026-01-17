@@ -1,6 +1,7 @@
 {
   "secret_key": "dev-secret-key",
-  "mcmap_dir": "mcmap",
+  "debug": false,
+  "mcmap_dir": "/mcmap",
   "smtp": {
     "host": "",
     "port": 587,

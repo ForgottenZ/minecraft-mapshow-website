@@ -29,6 +29,7 @@ CONFIG_PATH = BASE_DIR / "config.json"
 def load_config():
     default_config = {
         "secret_key": "dev-secret-key",
+        "debug": False,
         "mcmap_dir": "mcmap",
         "smtp": {
             "host": "",
@@ -259,6 +260,37 @@ def start_scan_thread():
     _scan_thread_started = True
 
 
+def list_directory(path: Path):
+    entries = []
+    if not path.exists():
+        return entries
+    for entry in sorted(path.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower())):
+        info = {
+            "name": entry.name,
+            "path": str(entry.resolve()),
+            "is_dir": entry.is_dir(),
+            "size": entry.stat().st_size if entry.is_file() else None,
+        }
+        entries.append(info)
+    return entries
+
+
+def make_json_safe(value):
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, timedelta):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: make_json_safe(val) for key, val in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [make_json_safe(item) for item in value]
+    if isinstance(value, sqlite3.Row):
+        return {key: make_json_safe(value[key]) for key in value.keys()}
+    return value
+
+
 def filter_maps(map_items, query, field):
     if not query:
         return map_items
@@ -318,6 +350,7 @@ def inject_settings():
     return {
         "registration_enabled": registration_enabled,
         "registration_mode": registration_mode,
+        "debug_enabled": bool(CONFIG.get("debug", False)),
     }
 
 
@@ -614,6 +647,38 @@ def admin_scan_maps():
     refresh_map_cache()
     flash("地图列表已重新扫描。")
     return redirect(url_for("admin_dashboard"))
+
+
+@app.route("/admin/debug")
+def admin_debug():
+    user = get_current_user()
+    require_admin(user)
+    if not CONFIG.get("debug", False):
+        abort(404)
+    maps, last_scan_at = get_cached_maps()
+    maps_serialized = [
+        {
+            "name": item["name"],
+            "zip_path": str(item["zip_path"]),
+            "detail_url": item.get("detail_url"),
+        }
+        for item in maps
+    ]
+    with get_db() as conn:
+        settings = conn.execute("SELECT * FROM settings ORDER BY key").fetchall()
+    debug_info = {
+        "config": make_json_safe(CONFIG),
+        "base_dir": str(BASE_DIR),
+        "db_path": str(DB_PATH),
+        "mcmap_dir": str(MCMAP_DIR),
+        "last_scan_at": make_json_safe(last_scan_at),
+        "cached_maps": maps_serialized,
+        "map_dir_entries": list_directory(MCMAP_DIR),
+        "base_dir_entries": list_directory(BASE_DIR),
+        "settings": [make_json_safe(row) for row in settings],
+        "flask_config": make_json_safe(dict(app.config)),
+    }
+    return render_template("admin_debug.html", user=user, debug_info=debug_info)
 
 
 @app.route("/admin/users")
