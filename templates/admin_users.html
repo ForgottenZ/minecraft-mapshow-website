@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>用户管理</h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>用户名</th>
+        <th>角色</th>
+        <th>状态</th>
+        <th>注册时间</th>
+        <th>最近登录</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for account in users %}
+        <tr>
+          <td>{{ account.username }}</td>
+          <td>{{ '管理员' if account.role == 'admin' else '普通用户' }}</td>
+          <td>{{ '启用' if account.enabled else '已禁用' }}</td>
+          <td>{{ account.created_at }}</td>
+          <td>{{ account.last_login or '从未登录' }}</td>
+          <td class="actions">
+            <form method="post" action="{{ url_for('admin_toggle_user', user_id=account.id) }}">
+              <button type="submit" class="button">{{ '禁用' if account.enabled else '启用' }}</button>
+            </form>
+            <form method="post" action="{{ url_for('admin_set_role', user_id=account.id) }}">
+              <select name="role">
+                <option value="user" {% if account.role == 'user' %}selected{% endif %}>普通用户</option>
+                <option value="admin" {% if account.role == 'admin' %}selected{% endif %}>管理员</option>
+              </select>
+              <button type="submit" class="button">更新角色</button>
+            </form>
+            <form method="post" action="{{ url_for('admin_delete_user', user_id=account.id) }}" onsubmit="return confirm('确认删除用户吗？');">
+              <button type="submit" class="button danger">删除</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint">当前管理员数量：{{ admin_count }}</p>
+</section>
+{% endblock %}

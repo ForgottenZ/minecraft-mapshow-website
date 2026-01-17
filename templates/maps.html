@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+  <h2>地图列表</h2>
+  {% if maps %}
+    <div class="map-grid">
+      {% for item in maps %}
+        <div class="card map-card">
+          <h3>{{ item.name }}</h3>
+          <div class="tag-list">
+            {% for tag in item.tags %}
+              <span class="tag">{{ tag.name }}</span>
+            {% else %}
+              <span class="tag muted">暂无标签</span>
+            {% endfor %}
+          </div>
+          <div class="map-actions">
+            <a class="button" href="{{ url_for('map_detail', map_name=item.name) }}">查看详情</a>
+            {% if user %}
+              <a class="button primary" href="{{ url_for('download', map_name=item.name) }}">下载</a>
+            {% else %}
+              <span class="button disabled" title="登录后可下载">登录后下载</span>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="card">
+      <p>未检测到可用地图。请在运行目录创建 <code>mcmap</code> 文件夹，并放入地图文件夹与同名压缩包。</p>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

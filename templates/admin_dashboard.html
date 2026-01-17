@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>管理员仪表盘</h2>
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-value">{{ user_count }}</span>
+      <span class="stat-label">用户数量</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value">{{ download_count }}</span>
+      <span class="stat-label">下载记录</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value">{{ tag_count }}</span>
+      <span class="stat-label">标签数量</span>
+    </div>
+  </div>
+  <div class="admin-links">
+    <a class="button" href="{{ url_for('admin_users') }}">用户管理</a>
+    <a class="button" href="{{ url_for('admin_tags') }}">标签管理</a>
+    <a class="button" href="{{ url_for('admin_downloads') }}">下载记录</a>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>创建标签</h2>
+  <form method="post" class="form-grid">
+    <label>
+      标签名称
+      <input type="text" name="name" required />
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="is_default" /> 设为默认标签
+    </label>
+    <button type="submit" class="primary">创建标签</button>
+  </form>
+  <p class="hint">创建后可关闭该窗口。</p>
+</section>
+{% endblock %}

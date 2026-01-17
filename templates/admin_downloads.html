@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>下载记录</h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>用户</th>
+        <th>地图</th>
+        <th>下载时间</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in downloads %}
+        <tr>
+          <td>{{ item.username }}</td>
+          <td>{{ item.map_name }}</td>
+          <td>{{ item.downloaded_at }}</td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="3">暂无下载记录。</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
