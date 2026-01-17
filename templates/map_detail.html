@@ -26,6 +26,13 @@
       {% endif %}
     </div>
   </div>
+  <div class="map-description">
+    {% if description %}
+      <p>{{ description }}</p>
+    {% else %}
+      <p class="hint">暂无地图简介。</p>
+    {% endif %}
+  </div>
   <p>地图文件位于 <code>mcmap/{{ map_item.name }}</code>。</p>
 </section>
 {% endblock %}

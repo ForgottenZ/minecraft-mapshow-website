@@ -109,6 +109,12 @@ def init_db():
                 FOREIGN KEY(tag_id) REFERENCES tags(id)
             );
 
+            CREATE TABLE IF NOT EXISTS map_descriptions (
+                map_name TEXT PRIMARY KEY,
+                description TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -360,6 +366,17 @@ def get_map_tags(map_name):
         ).fetchall()
 
 
+def get_map_description(map_name):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT description FROM map_descriptions WHERE map_name=?",
+            (map_name,),
+        ).fetchone()
+    if not row:
+        return ""
+    return row["description"]
+
+
 def get_default_tags():
     with get_db() as conn:
         return conn.execute("SELECT * FROM tags WHERE is_default=1 ORDER BY name").fetchall()
@@ -596,11 +613,13 @@ def map_detail(map_name):
         abort(404)
     item = maps[map_name]
     tags = get_map_tags(map_name)
+    description = get_map_description(map_name)
     return render_template(
         "map_detail.html",
         user=user,
         map_item=item,
         tags=tags,
+        description=description,
     )
 
 
@@ -860,8 +879,27 @@ def admin_edit_map(map_name):
     current_ids = {row["tag_id"] for row in current_tags}
 
     if request.method == "POST":
+        action = request.form.get("action", "update")
+        if action == "create_tag":
+            name = request.form.get("new_tag_name", "").strip()
+            is_default = 1 if request.form.get("new_tag_default") == "on" else 0
+            if not name:
+                flash("标签名不能为空。")
+            else:
+                try:
+                    with get_db() as conn:
+                        conn.execute(
+                            "INSERT INTO tags (name, is_default, created_at) VALUES (?, ?, ?)",
+                            (name, is_default, datetime.utcnow().isoformat()),
+                        )
+                    flash("标签创建成功。")
+                except sqlite3.IntegrityError:
+                    flash("标签已存在。")
+            return redirect(url_for("admin_edit_map", map_name=map_name))
+
         selected = request.form.getlist("tags")
         selected_ids = {int(tag_id) for tag_id in selected}
+        description = request.form.get("description", "").strip()
         with get_db() as conn:
             conn.execute("DELETE FROM map_tags WHERE map_name=?", (map_name,))
             for tag_id in selected_ids:
@@ -869,10 +907,21 @@ def admin_edit_map(map_name):
                     "INSERT INTO map_tags (map_name, tag_id) VALUES (?, ?)",
                     (map_name, tag_id),
                 )
-        flash("标签已更新。")
+            conn.execute(
+                """
+                INSERT INTO map_descriptions (map_name, description, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(map_name) DO UPDATE SET
+                    description=excluded.description,
+                    updated_at=excluded.updated_at
+                """,
+                (map_name, description, datetime.utcnow().isoformat()),
+            )
+        flash("标签与简介已更新。")
         return redirect(url_for("admin_edit_map", map_name=map_name))
 
     default_tags = get_default_tags()
+    description = get_map_description(map_name)
     return render_template(
         "admin_edit_map.html",
         user=user,
@@ -880,6 +929,7 @@ def admin_edit_map(map_name):
         tags=tags,
         current_ids=current_ids,
         default_tags=default_tags,
+        description=description,
     )
 
 

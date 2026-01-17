@@ -3,8 +3,13 @@
 <section class="card">
   <h2>地图标签管理：{{ map_name }}</h2>
   <form method="post" class="tag-form">
+    <input type="hidden" name="action" value="update" />
+    <label>
+      地图简介
+      <textarea name="description" rows="4" placeholder="填写地图简介">{{ description }}</textarea>
+    </label>
     <div class="tag-actions">
-      <button type="submit" class="button primary">保存标签</button>
+      <button type="submit" class="button primary">保存标签与简介</button>
     </div>
     <div class="default-tags">
       <span class="hint">默认标签快捷按钮：</span>
@@ -25,15 +30,20 @@
   </form>
 </section>
 
-<section class="card iframe-card">
-  <h3>创建新标签（可拖动窗口）</h3>
-  <div class="iframe-container" id="tag-iframe">
-    <div class="iframe-header" id="iframe-handle">
-      创建标签
-      <span class="iframe-tip">拖动这里移动窗口</span>
-    </div>
-    <iframe src="{{ url_for('admin_tags_new') }}" title="创建标签"></iframe>
-  </div>
+<section class="card">
+  <h3>创建新标签</h3>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="action" value="create_tag" />
+    <label>
+      标签名称
+      <input type="text" name="new_tag_name" />
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="new_tag_default" />
+      设为默认标签
+    </label>
+    <button type="submit" class="button">创建标签</button>
+  </form>
 </section>
 
 <script>
@@ -46,32 +56,6 @@
         checkbox.checked = !checkbox.checked;
       }
     });
-  });
-
-  const iframeBox = document.getElementById('tag-iframe');
-  const handle = document.getElementById('iframe-handle');
-  let offsetX = 0;
-  let offsetY = 0;
-  let dragging = false;
-
-  handle.addEventListener('mousedown', (event) => {
-    dragging = true;
-    const rect = iframeBox.getBoundingClientRect();
-    offsetX = event.clientX - rect.left;
-    offsetY = event.clientY - rect.top;
-    iframeBox.style.position = 'fixed';
-  });
-
-  document.addEventListener('mousemove', (event) => {
-    if (!dragging) {
-      return;
-    }
-    iframeBox.style.left = `${event.clientX - offsetX}px`;
-    iframeBox.style.top = `${event.clientY - offsetY}px`;
-  });
-
-  document.addEventListener('mouseup', () => {
-    dragging = false;
   });
 </script>
 {% endblock %}

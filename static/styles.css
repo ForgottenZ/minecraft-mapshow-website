@@ -123,6 +123,14 @@ select {
   font-size: 14px;
 }
 
+textarea {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 14px;
+  resize: vertical;
+}
+
 button,
 .button {
   display: inline-flex;
@@ -305,6 +313,10 @@ button.primary,
   align-items: flex-start;
   gap: 20px;
   flex-wrap: wrap;
+}
+
+.map-description {
+  margin: 12px 0 6px;
 }
 
 .tag-form {
