@@ -198,6 +198,32 @@ def require_admin(user):
         abort(403)
 
 
+def find_map_zip(map_name: str, map_dir: Path):
+    zip_in_root = MCMAP_DIR / f"{map_name}.zip"
+    if zip_in_root.exists():
+        return zip_in_root
+    zip_in_dir = map_dir / f"{map_name}.zip"
+    if zip_in_dir.exists():
+        return zip_in_dir
+    for candidate in map_dir.glob("*.zip"):
+        return candidate
+    return None
+
+
+def find_map_url(map_name: str, map_dir: Path):
+    for candidate in MCMAP_DIR.glob("*.url"):
+        stem = candidate.stem
+        if stem == map_name or stem.startswith(map_name):
+            return candidate
+    for candidate in map_dir.glob("*.url"):
+        stem = candidate.stem
+        if stem == map_name or stem.startswith(map_name):
+            return candidate
+    for candidate in map_dir.glob("*.url"):
+        return candidate
+    return None
+
+
 def scan_maps():
     maps = []
     if not MCMAP_DIR.exists():
@@ -207,16 +233,11 @@ def scan_maps():
         if not entry.is_dir():
             continue
         map_name = entry.name
-        zip_path = MCMAP_DIR / f"{map_name}.zip"
-        if not zip_path.exists():
+        zip_path = find_map_zip(map_name, entry)
+        if not zip_path:
             continue
 
-        url_file = None
-        for candidate in MCMAP_DIR.glob("*.url"):
-            stem = candidate.stem
-            if stem == map_name or stem.startswith(map_name):
-                url_file = candidate
-                break
+        url_file = find_map_url(map_name, entry)
         detail_url = None
         if url_file:
             detail_url = extract_url(url_file)
