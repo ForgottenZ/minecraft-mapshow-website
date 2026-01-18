@@ -292,6 +292,9 @@ button.primary,
   background: #f1f4ff;
   color: #3a4ddb;
   font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .tag.muted {

@@ -121,6 +121,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT UNIQUE NOT NULL,
                 is_default INTEGER NOT NULL DEFAULT 0,
+                color TEXT,
                 created_at TEXT NOT NULL
             );
 
@@ -193,6 +194,8 @@ def init_db():
         if "is_global" not in tag_columns:
             conn.execute("ALTER TABLE tags ADD COLUMN is_global INTEGER NOT NULL DEFAULT 1")
             conn.execute("UPDATE tags SET is_global=1 WHERE is_global IS NULL")
+        if "color" not in tag_columns:
+            conn.execute("ALTER TABLE tags ADD COLUMN color TEXT")
         map_description_columns = {
             row["name"] for row in conn.execute("PRAGMA table_info(map_descriptions)")
         }
@@ -1492,14 +1495,15 @@ def admin_tags():
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         is_global = 1 if request.form.get("is_global") == "on" else 0
+        color = request.form.get("color", "").strip()
         if not name:
             flash("标签名不能为空。")
         else:
             try:
                 with get_db() as conn:
                     conn.execute(
-                        "INSERT INTO tags (name, is_global, created_at) VALUES (?, ?, ?)",
-                        (name, is_global, datetime.utcnow().isoformat()),
+                        "INSERT INTO tags (name, is_global, color, created_at) VALUES (?, ?, ?, ?)",
+                        (name, is_global, color or None, datetime.utcnow().isoformat()),
                     )
                 flash("标签创建成功。")
             except sqlite3.IntegrityError:
@@ -1516,14 +1520,15 @@ def admin_tags_new():
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         is_global = 1 if request.form.get("is_global") == "on" else 0
+        color = request.form.get("color", "").strip()
         if not name:
             flash("标签名不能为空。")
         else:
             try:
                 with get_db() as conn:
                     conn.execute(
-                        "INSERT INTO tags (name, is_global, created_at) VALUES (?, ?, ?)",
-                        (name, is_global, datetime.utcnow().isoformat()),
+                        "INSERT INTO tags (name, is_global, color, created_at) VALUES (?, ?, ?, ?)",
+                        (name, is_global, color or None, datetime.utcnow().isoformat()),
                     )
                 flash("标签创建成功，可关闭窗口。")
             except sqlite3.IntegrityError:
@@ -1583,14 +1588,15 @@ def admin_edit_map(map_name):
         if action == "create_tag":
             name = request.form.get("new_tag_name", "").strip()
             is_global = 1 if request.form.get("new_tag_global") == "on" else 0
+            color = request.form.get("new_tag_color", "").strip()
             if not name:
                 flash("标签名不能为空。")
             else:
                 try:
                     with get_db() as conn:
                         conn.execute(
-                            "INSERT INTO tags (name, is_global, created_at) VALUES (?, ?, ?)",
-                            (name, is_global, datetime.utcnow().isoformat()),
+                            "INSERT INTO tags (name, is_global, color, created_at) VALUES (?, ?, ?, ?)",
+                            (name, is_global, color or None, datetime.utcnow().isoformat()),
                         )
                         if not is_global:
                             tag_row = conn.execute(

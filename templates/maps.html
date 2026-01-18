@@ -43,7 +43,7 @@
           {% endif %}
           <div class="tag-list map-tags">
             {% for tag in item.tags %}
-              <span class="tag">🏷️ {{ tag.name }}</span>
+              <span class="tag" {% if tag.color %}style="background: {{ tag.color }}; color: #fff;"{% endif %}>🏷️ {{ tag.name }}</span>
             {% else %}
               <span class="tag muted">暂无标签</span>
             {% endfor %}

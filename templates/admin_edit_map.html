@@ -22,7 +22,12 @@
     <div class="default-tags">
       <span class="hint">通用标签快捷按钮：</span>
       {% for tag in default_tags %}
-        <button type="button" class="button small" data-tag="{{ tag.id }}">{{ tag.name }}</button>
+        <button
+          type="button"
+          class="button small"
+          data-tag="{{ tag.id }}"
+          {% if tag.color %}style="background: {{ tag.color }}; color: #fff;"{% endif %}
+        >{{ tag.name }}</button>
       {% else %}
         <span class="hint">暂无通用标签</span>
       {% endfor %}
@@ -31,7 +36,7 @@
       {% for tag in tags %}
         <label class="checkbox">
           <input type="checkbox" name="tags" value="{{ tag.id }}" {% if tag.id in current_ids %}checked{% endif %} />
-          {{ tag.name }}
+          <span class="tag" {% if tag.color %}style="background: {{ tag.color }}; color: #fff;"{% endif %}>{{ tag.name }}</span>
         </label>
       {% endfor %}
     </div>
@@ -45,6 +50,10 @@
     <label>
       标签名称
       <input type="text" name="new_tag_name" />
+    </label>
+    <label>
+      标签颜色
+      <input type="color" name="new_tag_color" value="#3a4ddb" />
     </label>
     <label class="checkbox">
       <input type="checkbox" name="new_tag_global" checked />

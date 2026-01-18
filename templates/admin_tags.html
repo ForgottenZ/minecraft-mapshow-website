@@ -4,6 +4,7 @@
   <h2>标签管理</h2>
   <form method="post" class="form-inline">
     <input type="text" name="name" placeholder="标签名称" required />
+    <input type="color" name="color" value="#3a4ddb" />
     <label class="checkbox">
       <input type="checkbox" name="is_global" checked /> 通用标签
     </label>
@@ -21,7 +22,9 @@
     <tbody>
       {% for tag in tags %}
         <tr>
-          <td>{{ tag.name }}</td>
+          <td>
+            <span class="tag" {% if tag.color %}style="background: {{ tag.color }}; color: #fff;"{% endif %}>{{ tag.name }}</span>
+          </td>
           <td>{{ '是' if tag.is_global else '否' }}</td>
           <td>{{ tag.created_at }}</td>
           <td class="actions">
