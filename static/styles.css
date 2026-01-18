@@ -299,6 +299,24 @@ button.primary,
   color: var(--muted);
 }
 
+.flag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #ffecec;
+  color: #cc2b2b;
+  font-size: 12px;
+  margin-right: 6px;
+}
+
+.threaded-count {
+  color: #d65a00;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

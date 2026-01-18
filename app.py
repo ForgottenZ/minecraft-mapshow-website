@@ -105,6 +105,15 @@ def init_db():
                 user_id INTEGER NOT NULL,
                 map_name TEXT NOT NULL,
                 downloaded_at TEXT NOT NULL,
+                threaded_count INTEGER NOT NULL DEFAULT 1,
+                threaded_mark INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS download_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                attempted_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
 
@@ -134,6 +143,32 @@ def init_db():
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS user_flags (
+                user_id INTEGER NOT NULL,
+                tag TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
+                expires_at TEXT,
+                PRIMARY KEY (user_id, tag),
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS operation_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                actor_user_id INTEGER,
+                action TEXT NOT NULL,
+                detail TEXT,
+                created_at TEXT NOT NULL,
+                ip_address TEXT,
+                FOREIGN KEY(actor_user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS rate_limit_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                identifier TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
         )
         columns = {
@@ -143,6 +178,15 @@ def init_db():
             conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
         if "email_verified" not in columns:
             conn.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0")
+        if "disabled_until" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN disabled_until TEXT")
+        download_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(downloads)")
+        }
+        if "threaded_count" not in download_columns:
+            conn.execute("ALTER TABLE downloads ADD COLUMN threaded_count INTEGER NOT NULL DEFAULT 1")
+        if "threaded_mark" not in download_columns:
+            conn.execute("ALTER TABLE downloads ADD COLUMN threaded_mark INTEGER NOT NULL DEFAULT 0")
         tag_columns = {
             row["name"] for row in conn.execute("PRAGMA table_info(tags)")
         }
@@ -165,6 +209,22 @@ def init_db():
             "site_icon_path": "",
             "email_domain_policy": "none",
             "email_domain_list": "",
+            "register_limit_ip_count": "5",
+            "register_limit_ip_window_minutes": "60",
+            "register_limit_session_count": "3",
+            "register_limit_session_window_minutes": "60",
+            "email_code_limit_ip_count": "5",
+            "email_code_limit_ip_window_minutes": "10",
+            "email_code_limit_session_count": "3",
+            "email_code_limit_session_window_minutes": "10",
+            "download_limit_count": "5",
+            "download_limit_window_seconds": "60",
+            "multithread_window_seconds": "10",
+            "multithread_threshold": "3",
+            "multithread_tag_expire_minutes": "10",
+            "multithread_disable_threshold": "3",
+            "multithread_disable_minutes": "60",
+            "multithread_disable_mode": "temporary",
         }
         for key, value in defaults.items():
             conn.execute(
@@ -187,6 +247,38 @@ def set_setting(key, value):
             "INSERT INTO settings (key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, value),
+        )
+
+
+def get_client_ip():
+    return request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+
+
+def get_session_id():
+    session_id = session.get("rate_session_id")
+    if not session_id:
+        session_id = f"sess-{random.randint(100000, 999999)}-{int(time.time())}"
+        session["rate_session_id"] = session_id
+    return session_id
+
+
+def log_action(action, detail=None, actor_user_id=None):
+    ip_address = None
+    if request:
+        ip_address = get_client_ip()
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO operation_logs (actor_user_id, action, detail, created_at, ip_address)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                actor_user_id,
+                action,
+                detail,
+                datetime.utcnow().isoformat(),
+                ip_address,
+            ),
         )
 
 
@@ -219,6 +311,115 @@ def get_email_domain_policy():
     domain_list_value = get_setting("email_domain_list", "")
     domains = parse_domain_list(domain_list_value)
     return policy, domains
+
+
+def get_rate_limit_value(key, default):
+    try:
+        value = int(get_setting(key, str(default)))
+    except ValueError:
+        value = default
+    return max(0, value)
+
+
+def check_rate_limit(event_type, identifier, window_seconds, max_count):
+    if max_count <= 0 or window_seconds <= 0:
+        return True
+    since_time = datetime.utcnow() - timedelta(seconds=window_seconds)
+    with get_db() as conn:
+        count = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM rate_limit_events
+            WHERE event_type = ? AND identifier = ? AND created_at >= ?
+            """,
+            (event_type, identifier, since_time.isoformat()),
+        ).fetchone()["count"]
+    return count < max_count
+
+
+def record_rate_limit_event(event_type, identifier):
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO rate_limit_events (event_type, identifier, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (event_type, identifier, datetime.utcnow().isoformat()),
+        )
+
+
+def cleanup_user_flags(user_id):
+    now_iso = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM user_flags WHERE user_id=? AND expires_at IS NOT NULL AND expires_at < ?",
+            (user_id, now_iso),
+        )
+
+
+def add_user_flag(user_id, tag, expire_minutes):
+    expires_at = None
+    if expire_minutes > 0:
+        expires_at = (datetime.utcnow() + timedelta(minutes=expire_minutes)).isoformat()
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT count FROM user_flags WHERE user_id=? AND tag=?",
+            (user_id, tag),
+        ).fetchone()
+        if existing:
+            new_count = existing["count"] + 1
+            conn.execute(
+                "UPDATE user_flags SET count=?, expires_at=? WHERE user_id=? AND tag=?",
+                (new_count, expires_at, user_id, tag),
+            )
+        else:
+            new_count = 1
+            conn.execute(
+                "INSERT INTO user_flags (user_id, tag, count, expires_at) VALUES (?, ?, ?, ?)",
+                (user_id, tag, new_count, expires_at),
+            )
+    return new_count
+
+
+def get_user_flags(user_id):
+    with get_db() as conn:
+        return conn.execute(
+            "SELECT * FROM user_flags WHERE user_id=? ORDER BY tag",
+            (user_id,),
+        ).fetchall()
+
+
+def normalize_user_status(user):
+    if not user:
+        return user
+    disabled_until = user["disabled_until"]
+    if disabled_until:
+        try:
+            disabled_until_dt = datetime.fromisoformat(disabled_until)
+        except ValueError:
+            disabled_until_dt = None
+        if disabled_until_dt and datetime.utcnow() >= disabled_until_dt:
+            with get_db() as conn:
+                conn.execute("UPDATE users SET enabled=1, disabled_until=NULL WHERE id=?", (user["id"],))
+            return {**dict(user), "enabled": 1, "disabled_until": None}
+    return user
+
+
+def record_download_attempt(user_id):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO download_attempts (user_id, attempted_at) VALUES (?, ?)",
+            (user_id, datetime.utcnow().isoformat()),
+        )
+
+
+def count_download_attempts(user_id, window_seconds):
+    since_time = datetime.utcnow() - timedelta(seconds=window_seconds)
+    with get_db() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) AS count FROM download_attempts WHERE user_id=? AND attempted_at >= ?",
+            (user_id, since_time.isoformat()),
+        ).fetchone()["count"]
 
 
 def build_email_from_form(form):
@@ -316,7 +517,8 @@ def get_current_user():
     if not user_id:
         return None
     with get_db() as conn:
-        return conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+        user = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    return normalize_user_status(user)
 
 
 def require_admin(user):
@@ -566,6 +768,7 @@ def login():
         password = request.form.get("password", "")
         with get_db() as conn:
             user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+        user = normalize_user_status(user)
         if not user or not check_password_hash(user["password_hash"], password):
             flash("用户名或密码错误。")
         elif not user["enabled"] or (user["email"] and not user["email_verified"]):
@@ -681,6 +884,36 @@ def register():
         if registration_mode == "none" and (not username or not password):
             flash("请填写用户名和密码。")
         else:
+            client_ip = get_client_ip()
+            session_id = get_session_id()
+            ip_limit = get_rate_limit_value("register_limit_ip_count", 5)
+            ip_window = get_rate_limit_value("register_limit_ip_window_minutes", 60) * 60
+            session_limit = get_rate_limit_value("register_limit_session_count", 3)
+            session_window = get_rate_limit_value("register_limit_session_window_minutes", 60) * 60
+            if not check_rate_limit("register_ip", client_ip, ip_window, ip_limit):
+                flash("当前 IP 注册次数过多，请稍后再试。")
+                return render_template(
+                    "register.html",
+                    registration_enabled=registration_enabled,
+                    registration_mode=registration_mode,
+                    email_domain_policy=email_domain_policy,
+                    email_domain_options=email_domain_options,
+                    email=email,
+                    email_local=email_local,
+                    email_domain=email_domain,
+                )
+            if not check_rate_limit("register_session", session_id, session_window, session_limit):
+                flash("当前会话注册次数过多，请稍后再试。")
+                return render_template(
+                    "register.html",
+                    registration_enabled=registration_enabled,
+                    registration_mode=registration_mode,
+                    email_domain_policy=email_domain_policy,
+                    email_domain_options=email_domain_options,
+                    email=email,
+                    email_local=email_local,
+                    email_domain=email_domain,
+                )
             try:
                 with get_db() as conn:
                     conn.execute(
@@ -699,6 +932,9 @@ def register():
                     )
                 with get_db() as conn:
                     user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+                record_rate_limit_event("register_ip", client_ip)
+                record_rate_limit_event("register_session", session_id)
+                log_action("user_register", f"username={username}", actor_user_id=user["id"] if user else None)
                 session.pop("email_code", None)
                 session.pop("email_code_sent_at", None)
                 session.pop("email_code_address", None)
@@ -740,12 +976,27 @@ def register_send_code():
     if not validate_email_domain(email, email_domain_policy, email_domain_options):
         flash("该邮箱后缀不被允许。")
         return redirect(url_for("register"))
+    client_ip = get_client_ip()
+    session_id = get_session_id()
+    ip_limit = get_rate_limit_value("email_code_limit_ip_count", 5)
+    ip_window = get_rate_limit_value("email_code_limit_ip_window_minutes", 10) * 60
+    session_limit = get_rate_limit_value("email_code_limit_session_count", 3)
+    session_window = get_rate_limit_value("email_code_limit_session_window_minutes", 10) * 60
+    if not check_rate_limit("email_code_ip", client_ip, ip_window, ip_limit):
+        flash("当前 IP 发送验证码次数过多，请稍后再试。")
+        return redirect(url_for("register"))
+    if not check_rate_limit("email_code_session", session_id, session_window, session_limit):
+        flash("当前会话发送验证码次数过多，请稍后再试。")
+        return redirect(url_for("register"))
     code = f"{random.randint(0, 999999):06d}"
     try:
         send_email_code(email, code)
     except Exception as exc:
         flash(f"验证码发送失败：{exc}")
         return redirect(url_for("register"))
+    record_rate_limit_event("email_code_ip", client_ip)
+    record_rate_limit_event("email_code_session", session_id)
+    log_action("send_email_code", f"email={email}")
     session["email_code"] = code
     session["email_code_sent_at"] = datetime.utcnow().isoformat()
     session["email_code_address"] = email
@@ -848,12 +1099,93 @@ def download(map_name):
     maps = {item["name"]: item for item in maps}
     if map_name not in maps:
         abort(404)
+    record_download_attempt(user["id"])
+    download_limit_count = get_rate_limit_value("download_limit_count", 5)
+    download_limit_window = get_rate_limit_value("download_limit_window_seconds", 60)
+    attempt_count = count_download_attempts(user["id"], download_limit_window)
+    if download_limit_count and attempt_count > download_limit_count:
+        flash("下载过于频繁，请稍后再试。")
+        log_action("download_rate_limited", f"user_id={user['id']}")
+        return redirect(url_for("index"))
+    multithread_window = get_rate_limit_value("multithread_window_seconds", 10)
+    multithread_threshold = get_rate_limit_value("multithread_threshold", 3)
+    multithread_hits = count_download_attempts(user["id"], multithread_window)
+    is_multithread = multithread_threshold > 0 and multithread_hits >= multithread_threshold
+    threaded_count_value = 1
+    threaded_mark_value = 1 if is_multithread else 0
+    if is_multithread:
+        expire_minutes = get_rate_limit_value("multithread_tag_expire_minutes", 10)
+        flag_count = add_user_flag(user["id"], "多线程", expire_minutes)
+        log_action("user_flag_multithread", f"user_id={user['id']},count={flag_count}")
+        disable_threshold = get_rate_limit_value("multithread_disable_threshold", 3)
+        disable_mode = get_setting("multithread_disable_mode", "temporary")
+        disable_minutes = get_rate_limit_value("multithread_disable_minutes", 60)
+        if disable_threshold and flag_count >= disable_threshold:
+            with get_db() as conn:
+                if disable_mode == "permanent":
+                    conn.execute("UPDATE users SET enabled=0, disabled_until=NULL WHERE id=?", (user["id"],))
+                    log_action("user_disabled_permanent", f"user_id={user['id']}")
+                else:
+                    disabled_until = (datetime.utcnow() + timedelta(minutes=disable_minutes)).isoformat()
+                    conn.execute(
+                        "UPDATE users SET enabled=0, disabled_until=? WHERE id=?",
+                        (disabled_until, user["id"]),
+                    )
+                    log_action(
+                        "user_disabled_temporary",
+                        f"user_id={user['id']},minutes={disable_minutes}",
+                    )
+            flash("账号因下载过于频繁被禁用。")
+            return redirect(url_for("index"))
     zip_path = maps[map_name]["zip_path"]
     with get_db() as conn:
-        conn.execute(
-            "INSERT INTO downloads (user_id, map_name, downloaded_at) VALUES (?, ?, ?)",
-            (user["id"], map_name, datetime.utcnow().isoformat()),
-        )
+        if is_multithread:
+            since_time = datetime.utcnow() - timedelta(seconds=multithread_window)
+            recent = conn.execute(
+                """
+                SELECT id, threaded_count
+                FROM downloads
+                WHERE user_id=? AND downloaded_at >= ?
+                ORDER BY downloaded_at DESC
+                LIMIT 1
+                """,
+                (user["id"], since_time.isoformat()),
+            ).fetchone()
+            if recent:
+                threaded_count_value = recent["threaded_count"] + 1
+                conn.execute(
+                    """
+                    UPDATE downloads
+                    SET threaded_count=?, threaded_mark=1, downloaded_at=?
+                    WHERE id=?
+                    """,
+                    (threaded_count_value, datetime.utcnow().isoformat(), recent["id"]),
+                )
+                keep_id = recent["id"]
+            else:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO downloads (user_id, map_name, downloaded_at, threaded_count, threaded_mark)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (user["id"], map_name, datetime.utcnow().isoformat(), threaded_count_value, threaded_mark_value),
+                )
+                keep_id = cursor.lastrowid
+            conn.execute(
+                """
+                DELETE FROM downloads
+                WHERE user_id=? AND downloaded_at >= ? AND id != ?
+                """,
+                (user["id"], since_time.isoformat(), keep_id),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO downloads (user_id, map_name, downloaded_at, threaded_count, threaded_mark)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (user["id"], map_name, datetime.utcnow().isoformat(), threaded_count_value, threaded_mark_value),
+            )
     return send_file(zip_path, as_attachment=True, download_name=zip_path.name)
 
 
@@ -871,6 +1203,22 @@ def admin_dashboard():
     registration_default_enabled = get_setting("registration_default_enabled", "1") == "1"
     email_domain_policy = get_setting("email_domain_policy", "none")
     email_domain_list = get_setting("email_domain_list", "")
+    register_limit_ip_count = get_setting("register_limit_ip_count", "5")
+    register_limit_ip_window_minutes = get_setting("register_limit_ip_window_minutes", "60")
+    register_limit_session_count = get_setting("register_limit_session_count", "3")
+    register_limit_session_window_minutes = get_setting("register_limit_session_window_minutes", "60")
+    email_code_limit_ip_count = get_setting("email_code_limit_ip_count", "5")
+    email_code_limit_ip_window_minutes = get_setting("email_code_limit_ip_window_minutes", "10")
+    email_code_limit_session_count = get_setting("email_code_limit_session_count", "3")
+    email_code_limit_session_window_minutes = get_setting("email_code_limit_session_window_minutes", "10")
+    download_limit_count = get_setting("download_limit_count", "5")
+    download_limit_window_seconds = get_setting("download_limit_window_seconds", "60")
+    multithread_window_seconds = get_setting("multithread_window_seconds", "10")
+    multithread_threshold = get_setting("multithread_threshold", "3")
+    multithread_tag_expire_minutes = get_setting("multithread_tag_expire_minutes", "10")
+    multithread_disable_threshold = get_setting("multithread_disable_threshold", "3")
+    multithread_disable_minutes = get_setting("multithread_disable_minutes", "60")
+    multithread_disable_mode = get_setting("multithread_disable_mode", "temporary")
     site_title = get_setting("site_title", "Minecraft 地图展示")
     site_subtitle = get_setting("site_subtitle", "游客可浏览，登录后下载，管理员可管理标签与用户。")
     site_icon_path = get_setting("site_icon_path", "")
@@ -886,6 +1234,22 @@ def admin_dashboard():
         registration_default_enabled=registration_default_enabled,
         email_domain_policy=email_domain_policy,
         email_domain_list=email_domain_list,
+        register_limit_ip_count=register_limit_ip_count,
+        register_limit_ip_window_minutes=register_limit_ip_window_minutes,
+        register_limit_session_count=register_limit_session_count,
+        register_limit_session_window_minutes=register_limit_session_window_minutes,
+        email_code_limit_ip_count=email_code_limit_ip_count,
+        email_code_limit_ip_window_minutes=email_code_limit_ip_window_minutes,
+        email_code_limit_session_count=email_code_limit_session_count,
+        email_code_limit_session_window_minutes=email_code_limit_session_window_minutes,
+        download_limit_count=download_limit_count,
+        download_limit_window_seconds=download_limit_window_seconds,
+        multithread_window_seconds=multithread_window_seconds,
+        multithread_threshold=multithread_threshold,
+        multithread_tag_expire_minutes=multithread_tag_expire_minutes,
+        multithread_disable_threshold=multithread_disable_threshold,
+        multithread_disable_minutes=multithread_disable_minutes,
+        multithread_disable_mode=multithread_disable_mode,
         last_scan_at=last_scan_at,
         site_title=site_title,
         site_subtitle=site_subtitle,
@@ -911,6 +1275,23 @@ def admin_settings():
     set_setting("registration_default_enabled", registration_default_enabled)
     set_setting("email_domain_policy", email_domain_policy)
     set_setting("email_domain_list", email_domain_list)
+    set_setting("register_limit_ip_count", request.form.get("register_limit_ip_count", "5"))
+    set_setting("register_limit_ip_window_minutes", request.form.get("register_limit_ip_window_minutes", "60"))
+    set_setting("register_limit_session_count", request.form.get("register_limit_session_count", "3"))
+    set_setting("register_limit_session_window_minutes", request.form.get("register_limit_session_window_minutes", "60"))
+    set_setting("email_code_limit_ip_count", request.form.get("email_code_limit_ip_count", "5"))
+    set_setting("email_code_limit_ip_window_minutes", request.form.get("email_code_limit_ip_window_minutes", "10"))
+    set_setting("email_code_limit_session_count", request.form.get("email_code_limit_session_count", "3"))
+    set_setting("email_code_limit_session_window_minutes", request.form.get("email_code_limit_session_window_minutes", "10"))
+    set_setting("download_limit_count", request.form.get("download_limit_count", "5"))
+    set_setting("download_limit_window_seconds", request.form.get("download_limit_window_seconds", "60"))
+    set_setting("multithread_window_seconds", request.form.get("multithread_window_seconds", "10"))
+    set_setting("multithread_threshold", request.form.get("multithread_threshold", "3"))
+    set_setting("multithread_tag_expire_minutes", request.form.get("multithread_tag_expire_minutes", "10"))
+    set_setting("multithread_disable_threshold", request.form.get("multithread_disable_threshold", "3"))
+    set_setting("multithread_disable_minutes", request.form.get("multithread_disable_minutes", "60"))
+    set_setting("multithread_disable_mode", request.form.get("multithread_disable_mode", "temporary"))
+    log_action("admin_update_settings", "registration_settings", actor_user_id=user["id"])
     flash("注册设置已更新。")
     return redirect(url_for("admin_dashboard"))
 
@@ -932,6 +1313,7 @@ def admin_site_settings():
     set_setting("site_title", site_title or "Minecraft 地图展示")
     set_setting("site_subtitle", site_subtitle)
     set_setting("site_icon_path", site_icon_path)
+    log_action("admin_update_site", "site_settings", actor_user_id=user["id"])
     flash("站点显示设置已更新。")
     return redirect(url_for("admin_dashboard"))
 
@@ -941,6 +1323,7 @@ def admin_scan_maps():
     user = get_current_user()
     require_admin(user)
     refresh_map_cache()
+    log_action("admin_scan_maps", None, actor_user_id=user["id"])
     flash("地图列表已重新扫描。")
     return redirect(url_for("admin_dashboard"))
 
@@ -986,7 +1369,57 @@ def admin_users():
         admin_count = conn.execute("SELECT COUNT(*) AS count FROM users WHERE role='admin'").fetchone()[
             "count"
         ]
-    return render_template("admin_users.html", user=user, users=users, admin_count=admin_count)
+    user_flags = {}
+    for account in users:
+        cleanup_user_flags(account["id"])
+        user_flags[account["id"]] = get_user_flags(account["id"])
+    return render_template(
+        "admin_users.html",
+        user=user,
+        users=users,
+        admin_count=admin_count,
+        user_flags=user_flags,
+    )
+
+
+@app.route("/admin/users/add", methods=["POST"])
+def admin_add_user():
+    user = get_current_user()
+    require_admin(user)
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    role = request.form.get("role", "user")
+    email = request.form.get("email", "").strip()
+    enabled = 1 if request.form.get("enabled") == "on" else 0
+    email_verified = 1 if request.form.get("email_verified") == "on" else 0
+    if role not in {"user", "admin"}:
+        flash("角色无效。")
+        return redirect(url_for("admin_users"))
+    if not username or not password:
+        flash("请填写用户名和密码。")
+        return redirect(url_for("admin_users"))
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """
+                INSERT INTO users (username, password_hash, role, enabled, created_at, email, email_verified)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    username,
+                    generate_password_hash(password),
+                    role,
+                    enabled,
+                    datetime.utcnow().isoformat(),
+                    email if email else None,
+                    email_verified,
+                ),
+            )
+        log_action("admin_create_user", f"username={username}", actor_user_id=user["id"])
+        flash("用户已创建。")
+    except sqlite3.IntegrityError:
+        flash("用户名已存在。")
+    return redirect(url_for("admin_users"))
 
 
 @app.route("/admin/users/<int:user_id>/toggle", methods=["POST"])
@@ -1004,7 +1437,8 @@ def admin_toggle_user(user_id):
             flash("至少需要保留一个启用状态的管理员。")
             return redirect(url_for("admin_users"))
         new_status = 0 if target["enabled"] else 1
-        conn.execute("UPDATE users SET enabled=? WHERE id=?", (new_status, user_id))
+        conn.execute("UPDATE users SET enabled=?, disabled_until=NULL WHERE id=?", (new_status, user_id))
+    log_action("admin_toggle_user", f"user_id={user_id},enabled={new_status}", actor_user_id=user["id"])
     return redirect(url_for("admin_users"))
 
 
@@ -1027,6 +1461,7 @@ def admin_set_role(user_id):
                 flash("至少需要保留一个管理员。")
                 return redirect(url_for("admin_users"))
         conn.execute("UPDATE users SET role=? WHERE id=?", (new_role, user_id))
+    log_action("admin_set_role", f"user_id={user_id},role={new_role}", actor_user_id=user["id"])
     return redirect(url_for("admin_users"))
 
 
@@ -1046,6 +1481,7 @@ def admin_delete_user(user_id):
                 flash("至少需要保留一个管理员。")
                 return redirect(url_for("admin_users"))
         conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+    log_action("admin_delete_user", f"user_id={user_id}", actor_user_id=user["id"])
     return redirect(url_for("admin_users"))
 
 
@@ -1227,6 +1663,23 @@ def admin_downloads():
             """
         ).fetchall()
     return render_template("admin_downloads.html", user=user, downloads=downloads)
+
+
+@app.route("/admin/logs")
+def admin_logs():
+    user = get_current_user()
+    require_admin(user)
+    with get_db() as conn:
+        logs = conn.execute(
+            """
+            SELECT operation_logs.*, users.username
+            FROM operation_logs
+            LEFT JOIN users ON operation_logs.actor_user_id = users.id
+            ORDER BY operation_logs.created_at DESC
+            LIMIT 200
+            """
+        ).fetchall()
+    return render_template("admin_logs.html", user=user, logs=logs)
 
 
 if __name__ == "__main__":

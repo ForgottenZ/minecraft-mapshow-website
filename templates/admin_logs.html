@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>操作日志</h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>时间</th>
+        <th>操作者</th>
+        <th>动作</th>
+        <th>详情</th>
+        <th>IP</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in logs %}
+        <tr>
+          <td>{{ item.created_at }}</td>
+          <td>{{ item.username or '系统' }}</td>
+          <td>{{ item.action }}</td>
+          <td>{{ item.detail or '-' }}</td>
+          <td>{{ item.ip_address or '-' }}</td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="5">暂无日志。</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

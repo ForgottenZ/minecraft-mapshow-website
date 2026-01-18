@@ -20,6 +20,7 @@
     <a class="button" href="{{ url_for('admin_users') }}">用户管理</a>
     <a class="button" href="{{ url_for('admin_tags') }}">标签管理</a>
     <a class="button" href="{{ url_for('admin_downloads') }}">下载记录</a>
+    <a class="button" href="{{ url_for('admin_logs') }}">操作日志</a>
     {% if debug_enabled %}
       <a class="button" href="{{ url_for('admin_debug') }}">调试工具</a>
     {% endif %}
@@ -54,6 +55,73 @@
     <label>
       邮箱后缀列表
       <input type="text" name="email_domain_list" value="{{ email_domain_list }}" placeholder="qq.com,gmail.com" />
+    </label>
+    <label>
+      注册次数限制（IP）
+      <input type="text" name="register_limit_ip_count" value="{{ register_limit_ip_count }}" />
+    </label>
+    <label>
+      注册次数窗口（分钟/IP）
+      <input type="text" name="register_limit_ip_window_minutes" value="{{ register_limit_ip_window_minutes }}" />
+    </label>
+    <label>
+      注册次数限制（会话）
+      <input type="text" name="register_limit_session_count" value="{{ register_limit_session_count }}" />
+    </label>
+    <label>
+      注册次数窗口（分钟/会话）
+      <input type="text" name="register_limit_session_window_minutes" value="{{ register_limit_session_window_minutes }}" />
+    </label>
+    <label>
+      邮箱验证码次数限制（IP）
+      <input type="text" name="email_code_limit_ip_count" value="{{ email_code_limit_ip_count }}" />
+    </label>
+    <label>
+      邮箱验证码窗口（分钟/IP）
+      <input type="text" name="email_code_limit_ip_window_minutes" value="{{ email_code_limit_ip_window_minutes }}" />
+    </label>
+    <label>
+      邮箱验证码次数限制（会话）
+      <input type="text" name="email_code_limit_session_count" value="{{ email_code_limit_session_count }}" />
+    </label>
+    <label>
+      邮箱验证码窗口（分钟/会话）
+      <input type="text" name="email_code_limit_session_window_minutes" value="{{ email_code_limit_session_window_minutes }}" />
+    </label>
+    <label>
+      下载次数限制
+      <input type="text" name="download_limit_count" value="{{ download_limit_count }}" />
+    </label>
+    <label>
+      下载次数窗口（秒）
+      <input type="text" name="download_limit_window_seconds" value="{{ download_limit_window_seconds }}" />
+    </label>
+    <label>
+      多线程检测窗口（秒）
+      <input type="text" name="multithread_window_seconds" value="{{ multithread_window_seconds }}" />
+    </label>
+    <label>
+      多线程触发阈值
+      <input type="text" name="multithread_threshold" value="{{ multithread_threshold }}" />
+    </label>
+    <label>
+      多线程标记有效期（分钟）
+      <input type="text" name="multithread_tag_expire_minutes" value="{{ multithread_tag_expire_minutes }}" />
+    </label>
+    <label>
+      多线程禁用阈值
+      <input type="text" name="multithread_disable_threshold" value="{{ multithread_disable_threshold }}" />
+    </label>
+    <label>
+      多线程禁用时长（分钟）
+      <input type="text" name="multithread_disable_minutes" value="{{ multithread_disable_minutes }}" />
+    </label>
+    <label>
+      多线程禁用方式
+      <select name="multithread_disable_mode">
+        <option value="temporary" {% if multithread_disable_mode == "temporary" %}selected{% endif %}>临时禁用</option>
+        <option value="permanent" {% if multithread_disable_mode == "permanent" %}selected{% endif %}>永久禁用</option>
+      </select>
     </label>
     <p class="hint">
       邮箱验证需要在配置文件中填写 SMTP 信息后生效。后缀列表支持用逗号或空格分隔。
