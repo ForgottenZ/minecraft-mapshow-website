@@ -6,7 +6,11 @@
   <title>{{ title if title else site_title }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
   {% if site_icon_path %}
-    <link rel="icon" href="{{ url_for('site_icon') }}" />
+    {% if site_icon_is_url %}
+      <link rel="icon" href="{{ site_icon_path }}" />
+    {% else %}
+      <link rel="icon" href="{{ url_for('site_icon') }}" />
+    {% endif %}
   {% endif %}
 </head>
 <body>

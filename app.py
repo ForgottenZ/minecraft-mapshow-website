@@ -521,6 +521,8 @@ def inject_settings():
         "site_title": site_title or "Minecraft 地图展示",
         "site_subtitle": site_subtitle,
         "site_icon_path": site_icon_path,
+        "site_icon_is_url": site_icon_path.startswith("http://")
+        or site_icon_path.startswith("https://"),
     }
 
 
@@ -807,7 +809,7 @@ def index():
 @app.route("/site-icon")
 def site_icon():
     icon_path_value = get_setting("site_icon_path", "").strip()
-    if not icon_path_value:
+    if not icon_path_value or icon_path_value.startswith("http://") or icon_path_value.startswith("https://"):
         abort(404)
     icon_path = Path(icon_path_value)
     if not icon_path.is_absolute() or not icon_path.is_file():
@@ -920,7 +922,11 @@ def admin_site_settings():
     site_title = request.form.get("site_title", "").strip()
     site_subtitle = request.form.get("site_subtitle", "").strip()
     site_icon_path = request.form.get("site_icon_path", "").strip()
-    if site_icon_path and not Path(site_icon_path).is_absolute():
+    if site_icon_path and not (
+        site_icon_path.startswith("http://")
+        or site_icon_path.startswith("https://")
+        or Path(site_icon_path).is_absolute()
+    ):
         flash("网站图标路径需要填写绝对路径。")
         return redirect(url_for("admin_dashboard"))
     set_setting("site_title", site_title or "Minecraft 地图展示")
