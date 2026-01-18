@@ -7,17 +7,45 @@
   {% else %}
     {% if registration_mode == "email" %}
       <form method="post" action="{{ url_for('register_send_code') }}" class="form-inline">
-        <label>
-          邮箱
-          <input type="text" name="email" value="{{ email or '' }}" required />
-        </label>
+        {% if email_domain_policy != "none" and email_domain_options %}
+          <label>
+            邮箱
+            <div class="email-split">
+              <input type="text" name="email_local" value="{{ email_local or '' }}" placeholder="name" required />
+              <select name="email_domain" required>
+                {% for domain in email_domain_options %}
+                  <option value="{{ domain }}" {% if email_domain == domain %}selected{% endif %}>示例{{ domain }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </label>
+        {% else %}
+          <label>
+            邮箱
+            <input type="text" name="email" value="{{ email or '' }}" required />
+          </label>
+        {% endif %}
         <button type="submit">发送验证码</button>
       </form>
       <form method="post" class="form-grid">
-        <label>
-          邮箱
-          <input type="text" name="email" value="{{ email or '' }}" required />
-        </label>
+        {% if email_domain_policy != "none" and email_domain_options %}
+          <label>
+            邮箱
+            <div class="email-split">
+              <input type="text" name="email_local" value="{{ email_local or '' }}" placeholder="name" required />
+              <select name="email_domain" required>
+                {% for domain in email_domain_options %}
+                  <option value="{{ domain }}" {% if email_domain == domain %}selected{% endif %}>示例{{ domain }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </label>
+        {% else %}
+          <label>
+            邮箱
+            <input type="text" name="email" value="{{ email or '' }}" required />
+          </label>
+        {% endif %}
         <label>
           验证码
           <input type="text" name="code" required />

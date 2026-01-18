@@ -8,6 +8,13 @@
     "user": "",
     "password": "",
     "from": "",
-    "use_tls": true
+    "use_tls": true,
+    "oauth2": {
+      "enabled": false,
+      "tenant_id": "",
+      "client_id": "",
+      "client_secret": "",
+      "refresh_token": ""
+    }
   }
 }

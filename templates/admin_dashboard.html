@@ -43,8 +43,20 @@
       <input type="checkbox" name="registration_default_enabled" {% if registration_default_enabled %}checked{% endif %} />
       注册默认启用
     </label>
+    <label>
+      邮箱后缀策略
+      <select name="email_domain_policy">
+        <option value="none" {% if email_domain_policy == "none" %}selected{% endif %}>不限制</option>
+        <option value="whitelist" {% if email_domain_policy == "whitelist" %}selected{% endif %}>白名单</option>
+        <option value="blacklist" {% if email_domain_policy == "blacklist" %}selected{% endif %}>黑名单</option>
+      </select>
+    </label>
+    <label>
+      邮箱后缀列表
+      <input type="text" name="email_domain_list" value="{{ email_domain_list }}" placeholder="qq.com,gmail.com" />
+    </label>
     <p class="hint">
-      邮箱验证需要在配置文件中填写 SMTP 信息后生效。
+      邮箱验证需要在配置文件中填写 SMTP 信息后生效。后缀列表支持用逗号或空格分隔。
     </p>
     <button type="submit" class="primary">保存设置</button>
   </form>

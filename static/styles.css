@@ -67,6 +67,10 @@ nav a:hover {
   border-color: var(--border);
 }
 
+.nav-back {
+  font-weight: 600;
+}
+
 .nav-user {
   color: var(--muted);
 }
@@ -106,6 +110,20 @@ nav a:hover {
   flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 16px;
+}
+
+.email-split {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.email-split input[type="text"] {
+  flex: 1;
+}
+
+.email-split select {
+  min-width: 160px;
 }
 
 label {

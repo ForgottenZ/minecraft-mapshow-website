@@ -62,6 +62,7 @@ python app.py
 - **下载记录**：在“下载记录”页面查看所有用户的下载时间与地图名称。
 - **注册设置**：管理员可在仪表盘关闭注册或切换为邮箱验证注册。
 - **注册默认状态**：管理员可设置新注册账户是否默认启用。
+- **邮箱后缀策略**：管理员可配置邮箱后缀白名单或黑名单（逗号或空格分隔）。
 - **地图扫描**：系统每分钟自动扫描一次地图目录，管理员可在仪表盘手动触发。
 
 ## 配置文件
@@ -79,7 +80,14 @@ python app.py
     "user": "your_account",
     "password": "your_password",
     "from": "your_account",
-    "use_tls": true
+    "use_tls": true,
+    "oauth2": {
+      "enabled": false,
+      "tenant_id": "",
+      "client_id": "",
+      "client_secret": "",
+      "refresh_token": ""
+    }
   }
 }
 ```
@@ -87,6 +95,7 @@ python app.py
 ## 邮箱注册配置
 
 当管理员切换为“邮箱验证”注册方式时，需要在 `config.json` 中配置 SMTP 信息。
+如需使用微软账号作为 SMTP（OAuth2），请填写 `smtp.oauth2` 的 `tenant_id`、`client_id`、`client_secret` 与 `refresh_token` 并开启 `enabled`。
 
 ## 调试工具
 

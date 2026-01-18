@@ -1,9 +1,11 @@
+import base64
 import json
 import random
 import smtplib
 import sqlite3
 import threading
 import time
+import urllib.request
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
@@ -38,6 +40,13 @@ def load_config():
             "password": "",
             "from": "",
             "use_tls": True,
+            "oauth2": {
+                "enabled": False,
+                "tenant_id": "",
+                "client_id": "",
+                "client_secret": "",
+                "refresh_token": "",
+            },
         },
     }
     if not CONFIG_PATH.exists():
@@ -50,6 +59,10 @@ def load_config():
         config = json.load(handle)
     merged = {**default_config, **config}
     merged["smtp"] = {**default_config["smtp"], **config.get("smtp", {})}
+    merged["smtp"]["oauth2"] = {
+        **default_config["smtp"]["oauth2"],
+        **merged["smtp"].get("oauth2", {}),
+    }
     return merged
 
 
@@ -150,6 +163,8 @@ def init_db():
             "site_title": "Minecraft 地图展示",
             "site_subtitle": "游客可浏览，登录后下载，管理员可管理标签与用户。",
             "site_icon_path": "",
+            "email_domain_policy": "none",
+            "email_domain_list": "",
         }
         for key, value in defaults.items():
             conn.execute(
@@ -183,6 +198,82 @@ def get_registration_config():
     return enabled, mode
 
 
+def parse_domain_list(domain_list_value):
+    raw_items = domain_list_value.replace("\n", ",").replace(" ", ",").split(",")
+    domains = []
+    for item in raw_items:
+        value = item.strip()
+        if not value:
+            continue
+        if not value.startswith("@"):
+            value = f"@{value}"
+        if value not in domains:
+            domains.append(value)
+    return domains
+
+
+def get_email_domain_policy():
+    policy = get_setting("email_domain_policy", "none")
+    if policy not in {"none", "whitelist", "blacklist"}:
+        policy = "none"
+    domain_list_value = get_setting("email_domain_list", "")
+    domains = parse_domain_list(domain_list_value)
+    return policy, domains
+
+
+def build_email_from_form(form):
+    email = form.get("email", "").strip()
+    local_part = form.get("email_local", "").strip()
+    domain = form.get("email_domain", "").strip()
+    if local_part and domain:
+        if not domain.startswith("@"):
+            domain = f"@{domain}"
+        email = f"{local_part}{domain}"
+    return email
+
+
+def validate_email_domain(email, policy, domains):
+    if policy == "none" or not domains:
+        return True
+    if "@" not in email:
+        return False
+    domain = "@" + email.split("@", 1)[1]
+    if policy == "whitelist":
+        return domain in domains
+    if policy == "blacklist":
+        return domain not in domains
+    return True
+
+
+def get_oauth2_access_token(oauth_config):
+    tenant_id = oauth_config.get("tenant_id")
+    client_id = oauth_config.get("client_id")
+    client_secret = oauth_config.get("client_secret")
+    refresh_token = oauth_config.get("refresh_token")
+    if not all([tenant_id, client_id, client_secret, refresh_token]):
+        raise ValueError("SMTP OAuth2 配置未完成")
+    token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+    data = (
+        "client_id=" + client_id
+        + "&client_secret=" + client_secret
+        + "&refresh_token=" + refresh_token
+        + "&grant_type=refresh_token"
+        + "&scope=https%3A%2F%2Foutlook.office365.com%2F.default"
+    )
+    request_data = data.encode("utf-8")
+    req = urllib.request.Request(
+        token_url,
+        data=request_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    access_token = payload.get("access_token")
+    if not access_token:
+        raise ValueError("OAuth2 access token 获取失败")
+    return access_token
+
+
 def send_email_code(email_address, code):
     smtp_config = CONFIG.get("smtp", {})
     smtp_host = smtp_config.get("host")
@@ -191,8 +282,12 @@ def send_email_code(email_address, code):
     smtp_password = smtp_config.get("password")
     smtp_from = smtp_config.get("from") or smtp_user
     use_tls = bool(smtp_config.get("use_tls", True))
+    oauth_config = smtp_config.get("oauth2", {}) if isinstance(smtp_config.get("oauth2"), dict) else {}
+    use_oauth2 = bool(oauth_config.get("enabled"))
     if not smtp_host or not smtp_from:
         raise ValueError("SMTP 配置未完成")
+    if use_oauth2 and not smtp_user:
+        raise ValueError("SMTP OAuth2 需要配置发送邮箱账号")
     message = EmailMessage()
     message["Subject"] = "Minecraft 地图站注册验证码"
     message["From"] = smtp_from
@@ -201,7 +296,11 @@ def send_email_code(email_address, code):
     with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
         if use_tls:
             server.starttls()
-        if smtp_user and smtp_password:
+        if use_oauth2:
+            access_token = get_oauth2_access_token(oauth_config)
+            auth_string = f"user={smtp_user}\x01auth=Bearer {access_token}\x01\x01"
+            server.docmd("AUTH", "XOAUTH2 " + base64.b64encode(auth_string.encode("utf-8")).decode("utf-8"))
+        elif smtp_user and smtp_password:
             server.login(smtp_user, smtp_password)
         server.send_message(message)
 
@@ -490,6 +589,7 @@ def logout():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     registration_enabled, registration_mode = get_registration_config()
+    email_domain_policy, email_domain_options = get_email_domain_policy()
     if not registration_enabled:
         if request.method == "POST":
             flash("管理员已关闭注册。")
@@ -497,10 +597,16 @@ def register():
             "register.html",
             registration_enabled=registration_enabled,
             registration_mode=registration_mode,
+            email_domain_policy=email_domain_policy,
+            email_domain_options=email_domain_options,
         )
     if request.method == "POST":
         username = request.form.get("username", "").strip()
-        email = request.form.get("email", "").strip()
+        email = build_email_from_form(request.form)
+        email_local = request.form.get("email_local", "").strip()
+        email_domain = request.form.get("email_domain", "").strip()
+        if not email_domain and "@" in email:
+            email_domain = "@" + email.split("@", 1)[1]
         password = request.form.get("password", "")
         default_enabled = get_setting("registration_default_enabled", "1") == "1"
         email_verified = 1 if registration_mode == "email" or not email else 0
@@ -515,7 +621,23 @@ def register():
                     "register.html",
                     registration_enabled=registration_enabled,
                     registration_mode=registration_mode,
+                    email_domain_policy=email_domain_policy,
+                    email_domain_options=email_domain_options,
                     email=email,
+                    email_local=email_local,
+                    email_domain=email_domain,
+                )
+            if not validate_email_domain(email, email_domain_policy, email_domain_options):
+                flash("该邮箱后缀不被允许。")
+                return render_template(
+                    "register.html",
+                    registration_enabled=registration_enabled,
+                    registration_mode=registration_mode,
+                    email_domain_policy=email_domain_policy,
+                    email_domain_options=email_domain_options,
+                    email=email,
+                    email_local=email_local,
+                    email_domain=email_domain,
                 )
             if not code_info or not code_sent_at or code_email != email:
                 flash("请先获取邮箱验证码。")
@@ -523,7 +645,11 @@ def register():
                     "register.html",
                     registration_enabled=registration_enabled,
                     registration_mode=registration_mode,
+                    email_domain_policy=email_domain_policy,
+                    email_domain_options=email_domain_options,
                     email=email,
+                    email_local=email_local,
+                    email_domain=email_domain,
                 )
             if datetime.utcnow() - datetime.fromisoformat(code_sent_at) > timedelta(minutes=10):
                 flash("验证码已过期，请重新获取。")
@@ -531,7 +657,11 @@ def register():
                     "register.html",
                     registration_enabled=registration_enabled,
                     registration_mode=registration_mode,
+                    email_domain_policy=email_domain_policy,
+                    email_domain_options=email_domain_options,
                     email=email,
+                    email_local=email_local,
+                    email_domain=email_domain,
                 )
             if code != code_info:
                 flash("验证码错误。")
@@ -539,7 +669,11 @@ def register():
                     "register.html",
                     registration_enabled=registration_enabled,
                     registration_mode=registration_mode,
+                    email_domain_policy=email_domain_policy,
+                    email_domain_options=email_domain_options,
                     email=email,
+                    email_local=email_local,
+                    email_domain=email_domain,
                 )
             username = email
         if registration_mode == "none" and (not username or not password):
@@ -575,10 +709,19 @@ def register():
                 return redirect(url_for("login"))
             except sqlite3.IntegrityError:
                 flash("用户名已存在。")
+    email_local = ""
+    email_domain = ""
+    if "@" in request.args.get("email", ""):
+        email_local = request.args.get("email", "").split("@", 1)[0]
+        email_domain = "@" + request.args.get("email", "").split("@", 1)[1]
     return render_template(
         "register.html",
         registration_enabled=registration_enabled,
         registration_mode=registration_mode,
+        email_domain_policy=email_domain_policy,
+        email_domain_options=email_domain_options,
+        email_local=email_local,
+        email_domain=email_domain,
     )
 
 
@@ -587,9 +730,13 @@ def register_send_code():
     registration_enabled, registration_mode = get_registration_config()
     if not registration_enabled or registration_mode != "email":
         abort(403)
-    email = request.form.get("email", "").strip()
+    email_domain_policy, email_domain_options = get_email_domain_policy()
+    email = build_email_from_form(request.form)
     if not email:
         flash("请输入邮箱地址。")
+        return redirect(url_for("register"))
+    if not validate_email_domain(email, email_domain_policy, email_domain_options):
+        flash("该邮箱后缀不被允许。")
         return redirect(url_for("register"))
     code = f"{random.randint(0, 999999):06d}"
     try:
@@ -720,6 +867,8 @@ def admin_dashboard():
         tag_count = conn.execute("SELECT COUNT(*) AS count FROM tags").fetchone()["count"]
     registration_enabled, registration_mode = get_registration_config()
     registration_default_enabled = get_setting("registration_default_enabled", "1") == "1"
+    email_domain_policy = get_setting("email_domain_policy", "none")
+    email_domain_list = get_setting("email_domain_list", "")
     site_title = get_setting("site_title", "Minecraft 地图展示")
     site_subtitle = get_setting("site_subtitle", "游客可浏览，登录后下载，管理员可管理标签与用户。")
     site_icon_path = get_setting("site_icon_path", "")
@@ -733,6 +882,8 @@ def admin_dashboard():
         registration_enabled=registration_enabled,
         registration_mode=registration_mode,
         registration_default_enabled=registration_default_enabled,
+        email_domain_policy=email_domain_policy,
+        email_domain_list=email_domain_list,
         last_scan_at=last_scan_at,
         site_title=site_title,
         site_subtitle=site_subtitle,
@@ -747,11 +898,17 @@ def admin_settings():
     registration_enabled = "1" if request.form.get("registration_enabled") == "on" else "0"
     registration_mode = request.form.get("registration_mode", "none")
     registration_default_enabled = "1" if request.form.get("registration_default_enabled") == "on" else "0"
+    email_domain_policy = request.form.get("email_domain_policy", "none")
+    email_domain_list = request.form.get("email_domain_list", "").strip()
     if registration_mode not in {"none", "email"}:
         registration_mode = "none"
+    if email_domain_policy not in {"none", "whitelist", "blacklist"}:
+        email_domain_policy = "none"
     set_setting("registration_enabled", registration_enabled)
     set_setting("registration_mode", registration_mode)
     set_setting("registration_default_enabled", registration_default_enabled)
+    set_setting("email_domain_policy", email_domain_policy)
+    set_setting("email_domain_list", email_domain_list)
     flash("注册设置已更新。")
     return redirect(url_for("admin_dashboard"))
 

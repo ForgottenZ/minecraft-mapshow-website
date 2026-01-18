@@ -19,6 +19,7 @@
         {% endif %}
       </div>
       <nav>
+        <a href="{{ request.referrer or url_for('index') }}" class="nav-back">返回</a>
         <a href="{{ url_for('index') }}">地图列表</a>
         {% if user and user['role'] == 'admin' %}
           <a href="{{ url_for('admin_dashboard') }}">管理员</a>
