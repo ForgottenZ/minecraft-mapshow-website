@@ -13,7 +13,12 @@
     <tbody>
       {% for item in downloads %}
         <tr>
-          <td>{{ item.username }}</td>
+          <td>
+            {{ item.username }}
+            {% if item.threaded_mark and item.threaded_count > 1 %}
+              <span class="threaded-count">({{ item.threaded_count }})</span>
+            {% endif %}
+          </td>
           <td>{{ item.map_name }}</td>
           <td>{{ item.downloaded_at }}</td>
         </tr>

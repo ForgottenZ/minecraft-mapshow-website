@@ -2,12 +2,44 @@
 {% block content %}
 <section class="card">
   <h2>用户管理</h2>
+  <form method="post" action="{{ url_for('admin_add_user') }}" class="form-grid">
+    <h3>添加用户</h3>
+    <label>
+      用户名
+      <input type="text" name="username" required />
+    </label>
+    <label>
+      密码
+      <input type="password" name="password" required />
+    </label>
+    <label>
+      邮箱
+      <input type="text" name="email" />
+    </label>
+    <label>
+      角色
+      <select name="role">
+        <option value="user">普通用户</option>
+        <option value="admin">管理员</option>
+      </select>
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="enabled" checked />
+      启用
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="email_verified" />
+      邮箱已验证
+    </label>
+    <button type="submit" class="primary">创建用户</button>
+  </form>
   <table class="data-table">
     <thead>
       <tr>
         <th>用户名</th>
         <th>角色</th>
         <th>状态</th>
+        <th>标记</th>
         <th>注册时间</th>
         <th>最近登录</th>
         <th>操作</th>
@@ -19,6 +51,13 @@
           <td>{{ account.username }}</td>
           <td>{{ '管理员' if account.role == 'admin' else '普通用户' }}</td>
           <td>{{ '启用' if account.enabled else '已禁用' }}</td>
+          <td>
+            {% for flag in user_flags.get(account.id, []) %}
+              <span class="flag-badge">{{ flag.tag }} ({{ flag.count }}){% if flag.expires_at %} 到期 {{ flag.expires_at }}{% endif %}</span>
+            {% else %}
+              <span class="muted">无</span>
+            {% endfor %}
+          </td>
           <td>{{ account.created_at }}</td>
           <td>{{ account.last_login or '从未登录' }}</td>
           <td class="actions">

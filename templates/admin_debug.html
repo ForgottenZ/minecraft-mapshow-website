@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>调试工具</h2>
+  <p class="hint">仅在 config.json 的 debug = true 时可用。</p>
+</section>
+<section class="card">
+  <h3>配置与路径</h3>
+  <div class="form-grid">
+    <label>基础目录</label>
+    <pre class="code-block">{{ debug_info.base_dir }}</pre>
+    <label>数据库路径</label>
+    <pre class="code-block">{{ debug_info.db_path }}</pre>
+    <label>地图目录</label>
+    <pre class="code-block">{{ debug_info.mcmap_dir }}</pre>
+    <label>配置文件</label>
+    <pre class="code-block">{{ debug_info.config | tojson(indent=2) }}</pre>
+  </div>
+</section>
+<section class="card">
+  <h3>扫描状态</h3>
+  <p class="hint">最近扫描时间：{{ debug_info.last_scan_at or "尚未扫描" }}</p>
+  <pre class="code-block">{{ debug_info.cached_maps | tojson(indent=2) }}</pre>
+</section>
+<section class="card">
+  <h3>地图目录内容</h3>
+  <pre class="code-block">{{ debug_info.map_dir_entries | tojson(indent=2) }}</pre>
+</section>
+<section class="card">
+  <h3>项目目录内容</h3>
+  <pre class="code-block">{{ debug_info.base_dir_entries | tojson(indent=2) }}</pre>
+</section>
+<section class="card">
+  <h3>系统设置表</h3>
+  <pre class="code-block">{{ debug_info.settings | tojson(indent=2) }}</pre>
+</section>
+<section class="card">
+  <h3>Flask 配置</h3>
+  <pre class="code-block">{{ debug_info.flask_config | tojson(indent=2) }}</pre>
+</section>
+{% endblock %}

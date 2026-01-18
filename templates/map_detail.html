@@ -3,10 +3,10 @@
 <section class="card">
   <div class="detail-header">
     <div>
-      <h2>{{ map_item.name }}</h2>
+      <h2>{{ display_name }}</h2>
       <div class="tag-list">
         {% for tag in tags %}
-          <span class="tag">{{ tag.name }}</span>
+          <span class="tag" {% if tag.color %}style="background: {{ tag.color }}; color: #fff;"{% endif %}>{{ tag.name }}</span>
         {% else %}
           <span class="tag muted">暂无标签</span>
         {% endfor %}
@@ -26,6 +26,18 @@
       {% endif %}
     </div>
   </div>
-  <p>地图文件位于 <code>mcmap/{{ map_item.name }}</code>。</p>
+  <div class="map-description">
+    {% if description %}
+      <p>{{ description }}</p>
+    {% else %}
+      <p class="hint">暂无地图简介。</p>
+    {% endif %}
+  </div>
+  {% if version %}
+    <p class="hint">地图版本：{{ version }}</p>
+  {% endif %}
+  {% if user and user['role'] == 'admin' %}
+    <p>地图文件位于 <code>mcmap/{{ map_item.name }}</code>。</p>
+  {% endif %}
 </section>
 {% endblock %}

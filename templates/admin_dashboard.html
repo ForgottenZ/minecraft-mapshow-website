@@ -20,6 +20,148 @@
     <a class="button" href="{{ url_for('admin_users') }}">用户管理</a>
     <a class="button" href="{{ url_for('admin_tags') }}">标签管理</a>
     <a class="button" href="{{ url_for('admin_downloads') }}">下载记录</a>
+    <a class="button" href="{{ url_for('admin_logs') }}">操作日志</a>
+    {% if debug_enabled %}
+      <a class="button" href="{{ url_for('admin_debug') }}">调试工具</a>
+    {% endif %}
   </div>
+</section>
+<section class="card">
+  <h3>注册设置</h3>
+  <form method="post" action="{{ url_for('admin_settings') }}" class="form-grid">
+    <label class="checkbox">
+      <input type="checkbox" name="registration_enabled" {% if registration_enabled %}checked{% endif %} />
+      允许注册
+    </label>
+    <label>
+      注册方式
+      <select name="registration_mode">
+        <option value="none" {% if registration_mode == "none" %}selected{% endif %}>无需邮箱</option>
+        <option value="email" {% if registration_mode == "email" %}selected{% endif %}>邮箱验证</option>
+      </select>
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="registration_default_enabled" {% if registration_default_enabled %}checked{% endif %} />
+      注册默认启用
+    </label>
+    <label>
+      邮箱后缀策略
+      <select name="email_domain_policy">
+        <option value="none" {% if email_domain_policy == "none" %}selected{% endif %}>不限制</option>
+        <option value="whitelist" {% if email_domain_policy == "whitelist" %}selected{% endif %}>白名单</option>
+        <option value="blacklist" {% if email_domain_policy == "blacklist" %}selected{% endif %}>黑名单</option>
+      </select>
+    </label>
+    <label>
+      邮箱后缀列表
+      <input type="text" name="email_domain_list" value="{{ email_domain_list }}" placeholder="qq.com,gmail.com" />
+    </label>
+    <label>
+      注册次数限制（IP）
+      <input type="text" name="register_limit_ip_count" value="{{ register_limit_ip_count }}" />
+    </label>
+    <label>
+      注册次数窗口（分钟/IP）
+      <input type="text" name="register_limit_ip_window_minutes" value="{{ register_limit_ip_window_minutes }}" />
+    </label>
+    <label>
+      注册次数限制（会话）
+      <input type="text" name="register_limit_session_count" value="{{ register_limit_session_count }}" />
+    </label>
+    <label>
+      注册次数窗口（分钟/会话）
+      <input type="text" name="register_limit_session_window_minutes" value="{{ register_limit_session_window_minutes }}" />
+    </label>
+    <label>
+      邮箱验证码次数限制（IP）
+      <input type="text" name="email_code_limit_ip_count" value="{{ email_code_limit_ip_count }}" />
+    </label>
+    <label>
+      邮箱验证码窗口（分钟/IP）
+      <input type="text" name="email_code_limit_ip_window_minutes" value="{{ email_code_limit_ip_window_minutes }}" />
+    </label>
+    <label>
+      邮箱验证码次数限制（会话）
+      <input type="text" name="email_code_limit_session_count" value="{{ email_code_limit_session_count }}" />
+    </label>
+    <label>
+      邮箱验证码窗口（分钟/会话）
+      <input type="text" name="email_code_limit_session_window_minutes" value="{{ email_code_limit_session_window_minutes }}" />
+    </label>
+    <label>
+      下载次数限制
+      <input type="text" name="download_limit_count" value="{{ download_limit_count }}" />
+    </label>
+    <label>
+      下载次数窗口（秒）
+      <input type="text" name="download_limit_window_seconds" value="{{ download_limit_window_seconds }}" />
+    </label>
+    <label>
+      多线程检测窗口（秒）
+      <input type="text" name="multithread_window_seconds" value="{{ multithread_window_seconds }}" />
+    </label>
+    <label>
+      多线程触发阈值
+      <input type="text" name="multithread_threshold" value="{{ multithread_threshold }}" />
+    </label>
+    <label>
+      多线程标记有效期（分钟）
+      <input type="text" name="multithread_tag_expire_minutes" value="{{ multithread_tag_expire_minutes }}" />
+    </label>
+    <label>
+      多线程禁用阈值
+      <input type="text" name="multithread_disable_threshold" value="{{ multithread_disable_threshold }}" />
+    </label>
+    <label>
+      多线程禁用时长（分钟）
+      <input type="text" name="multithread_disable_minutes" value="{{ multithread_disable_minutes }}" />
+    </label>
+    <label>
+      多线程禁用方式
+      <select name="multithread_disable_mode">
+        <option value="temporary" {% if multithread_disable_mode == "temporary" %}selected{% endif %}>临时禁用</option>
+        <option value="permanent" {% if multithread_disable_mode == "permanent" %}selected{% endif %}>永久禁用</option>
+      </select>
+    </label>
+    <p class="hint">
+      邮箱验证需要在配置文件中填写 SMTP 信息后生效。后缀列表支持用逗号或空格分隔。
+    </p>
+    <button type="submit" class="primary">保存设置</button>
+  </form>
+</section>
+<section class="card">
+  <h3>站点显示</h3>
+  <form method="post" action="{{ url_for('admin_site_settings') }}" class="form-grid">
+    <label>
+      标题
+      <input type="text" name="site_title" value="{{ site_title }}" />
+    </label>
+    <label>
+      副标题
+      <input type="text" name="site_subtitle" value="{{ site_subtitle }}" />
+    </label>
+    <label>
+      网站图标路径
+      <input type="text" name="site_icon_path" value="{{ site_icon_path }}" placeholder="/absolute/path/favicon.png" />
+    </label>
+    <p class="hint">
+      网站图标可填写服务器上的绝对路径或在线链接，留空则不显示图标。
+    </p>
+    <button type="submit" class="primary">保存显示设置</button>
+  </form>
+</section>
+<section class="card">
+  <h3>地图扫描</h3>
+  <p class="hint">
+    系统每分钟自动扫描一次地图目录。
+    {% if last_scan_at %}
+      最近扫描时间：{{ last_scan_at }} (UTC)
+    {% else %}
+      尚未扫描。
+    {% endif %}
+  </p>
+  <form method="post" action="{{ url_for('admin_scan_maps') }}">
+    <button type="submit" class="primary">立即扫描</button>
+  </form>
 </section>
 {% endblock %}

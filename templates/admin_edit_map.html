@@ -3,37 +3,64 @@
 <section class="card">
   <h2>地图标签管理：{{ map_name }}</h2>
   <form method="post" class="tag-form">
+    <input type="hidden" name="action" value="update" />
+    <label>
+      地图名称
+      <input type="text" name="display_name" value="{{ display_name }}" placeholder="可留空使用文件夹名称" />
+    </label>
+    <label>
+      地图版本
+      <input type="text" name="version" value="{{ version }}" placeholder="可选" />
+    </label>
+    <label>
+      地图简介
+      <textarea name="description" rows="4" placeholder="填写地图简介">{{ description }}</textarea>
+    </label>
     <div class="tag-actions">
-      <button type="submit" class="button primary">保存标签</button>
+      <button type="submit" class="button primary">保存标签与简介</button>
     </div>
     <div class="default-tags">
-      <span class="hint">默认标签快捷按钮：</span>
+      <span class="hint">通用标签快捷按钮：</span>
       {% for tag in default_tags %}
-        <button type="button" class="button small" data-tag="{{ tag.id }}">{{ tag.name }}</button>
+        <button
+          type="button"
+          class="button small"
+          data-tag="{{ tag.id }}"
+          {% if tag.color %}style="background: {{ tag.color }}; color: #fff;"{% endif %}
+        >{{ tag.name }}</button>
       {% else %}
-        <span class="hint">暂无默认标签</span>
+        <span class="hint">暂无通用标签</span>
       {% endfor %}
     </div>
     <div class="checkbox-grid">
       {% for tag in tags %}
         <label class="checkbox">
           <input type="checkbox" name="tags" value="{{ tag.id }}" {% if tag.id in current_ids %}checked{% endif %} />
-          {{ tag.name }}
+          <span class="tag" {% if tag.color %}style="background: {{ tag.color }}; color: #fff;"{% endif %}>{{ tag.name }}</span>
         </label>
       {% endfor %}
     </div>
   </form>
 </section>
 
-<section class="card iframe-card">
-  <h3>创建新标签（可拖动窗口）</h3>
-  <div class="iframe-container" id="tag-iframe">
-    <div class="iframe-header" id="iframe-handle">
-      创建标签
-      <span class="iframe-tip">拖动这里移动窗口</span>
-    </div>
-    <iframe src="{{ url_for('admin_tags_new') }}" title="创建标签"></iframe>
-  </div>
+<section class="card">
+  <h3>创建新标签</h3>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="action" value="create_tag" />
+    <label>
+      标签名称
+      <input type="text" name="new_tag_name" />
+    </label>
+    <label>
+      标签颜色
+      <input type="color" name="new_tag_color" value="#3a4ddb" />
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="new_tag_global" checked />
+      设为通用标签
+    </label>
+    <button type="submit" class="button">创建标签</button>
+  </form>
 </section>
 
 <script>
@@ -46,32 +73,6 @@
         checkbox.checked = !checkbox.checked;
       }
     });
-  });
-
-  const iframeBox = document.getElementById('tag-iframe');
-  const handle = document.getElementById('iframe-handle');
-  let offsetX = 0;
-  let offsetY = 0;
-  let dragging = false;
-
-  handle.addEventListener('mousedown', (event) => {
-    dragging = true;
-    const rect = iframeBox.getBoundingClientRect();
-    offsetX = event.clientX - rect.left;
-    offsetY = event.clientY - rect.top;
-    iframeBox.style.position = 'fixed';
-  });
-
-  document.addEventListener('mousemove', (event) => {
-    if (!dragging) {
-      return;
-    }
-    iframeBox.style.left = `${event.clientX - offsetX}px`;
-    iframeBox.style.top = `${event.clientY - offsetY}px`;
-  });
-
-  document.addEventListener('mouseup', () => {
-    dragging = false;
   });
 </script>
 {% endblock %}
